@@ -1,6 +1,7 @@
 package com.carlos.DocChat.AI.exceptions.http;
 
 import com.carlos.DocChat.AI.exceptions.service.DocumentPersistenceException;
+import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentReadException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentStorageException;
 import com.carlos.DocChat.AI.exceptions.service.InvalidPdfException;
@@ -13,6 +14,12 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 @RestControllerAdvice
 public class DocumentExceptionHandler {
+    @ExceptionHandler(DocumentNotFoundException.class)
+    public ResponseEntity<ErrorResponse> documentNotFound(DocumentNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(exception.getMessage()));
+    }
+
     @ExceptionHandler(InvalidPdfException.class)
     public ResponseEntity<ErrorResponse> invalidPdf(InvalidPdfException exception) {
         return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));

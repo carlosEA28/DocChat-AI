@@ -34,6 +34,7 @@ Concluída quando: as migrações são executadas corretamente em um banco vazio
 
 Fase 2 — Gerenciamento de documentos
 Objetivo: permitir que o usuário envie documentos PDF e que a aplicação controle seu armazenamento e estado de processamento.
+
 TASK-06 — Modelar a entidade Document
 Criar o modelo responsável pelos metadados de cada documento.
 Considerar identificador UUID, nome original, nome interno ou chave de armazenamento, tamanho, tipo de arquivo, status de processamento e datas de criação e atualização.
@@ -69,6 +70,7 @@ Concluída quando: todos os documentos registrados podem ser consultados pela AP
 
 
 Fase 3 — Pipeline de ingestão RAG
+
 Objetivo: transformar o conteúdo textual dos PDFs em embeddings pesquisáveis semanticamente.
 Esta fase implementa a base do RAG. É uma das mais importantes do projeto.
 TASK-11 — Implementar extração de texto

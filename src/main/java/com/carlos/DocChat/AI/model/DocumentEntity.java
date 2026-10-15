@@ -6,7 +6,10 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 @Entity
@@ -24,6 +27,12 @@ public class DocumentEntity {
     private String contentType;
     @Column(nullable = false)
     private long size;
+    @CreationTimestamp
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private OffsetDateTime createdAt;
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false)
+    private OffsetDateTime updatedAt;
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private DocumentStatus status;
@@ -74,5 +83,13 @@ public class DocumentEntity {
 
     public void setStatus(DocumentStatus status) {
         this.status = status;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public OffsetDateTime getUpdatedAt() {
+        return updatedAt;
     }
 }

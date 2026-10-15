@@ -1,0 +1,13 @@
+$kind: http-request
+url: http://localhost:8080/documents/fbba38f4-2574-4ff6-8c5b-e2a5b2884a89
+method: GET
+body:
+  type: formdata
+  content:
+    - type: file
+      key: file
+      src:
+        - /home/carloseduardo/Downloads/Carlos_Eduardo_Alves_Duarte_Devops-1.pdf
+      description: ""
+      disabled: false
+order: 2696940090712305
