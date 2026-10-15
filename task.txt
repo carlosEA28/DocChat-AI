@@ -1,0 +1,286 @@
+Fase 1 — Configuração e infraestrutura
+Objetivo: preparar o ambiente e validar as integrações fundamentais antes de começar a desenvolver funcionalidades.
+
+TASK-01 — Revisar as dependências do projeto
+Analisar o pom.xml e remover dependências redundantes ou desnecessárias. Definir os provedores de chat e embeddings e verificar se suas dependências são compatíveis com as versões escolhidas.
+Considerar que o Google GenAI utiliza starters específicos para chat e embeddings, enquanto o Ollama pode fornecer os dois recursos.
+Concluída quando: o Maven resolve todas as dependências e o projeto compila sem erros.
+
+
+TASK-02 — Configurar PostgreSQL e pgvector
+Criar o ambiente Docker Compose com PostgreSQL e a extensão pgvector disponível. Configurar usuário, banco, persistência de dados e conexão local.
+Verificar se a extensão vetorial pode ser habilitada e se o container permanece funcional após reinicializações.
+Concluída quando: o banco está acessível e suporta operações com vetores.
+
+
+TASK-03 — Configurar propriedades da aplicação
+Organizar o application.yml e as variáveis de ambiente. Configurar datasource, Flyway, provedor de IA, limite de upload e diretório de armazenamento de arquivos.
+Manter credenciais fora do repositório e fornecer configurações de exemplo.
+Concluída quando: a aplicação inicia usando configurações externas, sem credenciais expostas.
+
+
+TASK-04 — Configurar modelos de IA
+Selecionar o modelo responsável pelas respostas e o modelo responsável pela geração de embeddings.
+Verificar conectividade, limites de utilização, dimensão dos embeddings e compatibilidade com o pgvector.
+Evitar configurar múltiplos provedores ativos desnecessariamente.
+Concluída quando: a aplicação consegue gerar uma resposta simples e um embedding válido.
+
+
+TASK-05 — Configurar Flyway e migrações
+Preparar a estrutura de migrações SQL. Definir como serão criadas as tabelas da aplicação e a estrutura utilizada pelo armazenamento vetorial.
+Garantir que a inicialização automática do pgvector pelo Spring AI não entre em conflito com as migrações.
+Concluída quando: as migrações são executadas corretamente em um banco vazio.
+
+
+Fase 2 — Gerenciamento de documentos
+Objetivo: permitir que o usuário envie documentos PDF e que a aplicação controle seu armazenamento e estado de processamento.
+TASK-06 — Modelar a entidade Document
+Criar o modelo responsável pelos metadados de cada documento.
+Considerar identificador UUID, nome original, nome interno ou chave de armazenamento, tamanho, tipo de arquivo, status de processamento e datas de criação e atualização.
+Definir os estados PENDING, PROCESSING, READY e FAILED.
+Concluída quando: o documento pode ser persistido, recuperado e ter seu status atualizado.
+
+
+TASK-07 — Implementar upload de PDF
+Criar o endpoint HTTP para receber arquivos multipart/form-data.
+Definir o contrato da requisição e da resposta, incluindo o identificador do documento e seu estado inicial.
+O upload deve ser independente da lógica de RAG.
+Concluída quando: um PDF pode ser enviado e registrado na aplicação.
+
+
+TASK-08 — Implementar validação de arquivos
+Validar tamanho máximo, extensão, tipo de conteúdo e estrutura básica do PDF.
+Rejeitar arquivos vazios, corrompidos, não suportados ou protegidos por senha quando não puderem ser processados.
+Não confiar apenas na extensão fornecida pelo usuário.
+Concluída quando: arquivos inválidos são rejeitados com respostas HTTP apropriadas.
+
+
+TASK-09 — Implementar armazenamento local
+Salvar os PDFs em um diretório configurável, utilizando identificadores internos em vez do nome original como caminho de armazenamento.
+Tratar conflitos de nomes, falhas de escrita e limpeza de arquivos parciais.
+Manter os metadados no PostgreSQL e o arquivo no sistema de arquivos.
+Concluída quando: os arquivos permanecem acessíveis após reiniciar a aplicação.
+
+
+TASK-10 — Implementar consulta de documentos
+Criar endpoints para listar documentos e consultar seus detalhes.
+Retornar nome, tamanho, data de upload, status e, quando disponível, informações do processamento.
+Concluída quando: todos os documentos registrados podem ser consultados pela API.
+
+
+Fase 3 — Pipeline de ingestão RAG
+Objetivo: transformar o conteúdo textual dos PDFs em embeddings pesquisáveis semanticamente.
+Esta fase implementa a base do RAG. É uma das mais importantes do projeto.
+TASK-11 — Implementar extração de texto
+Integrar o leitor de PDF do Spring AI para extrair o conteúdo do documento, preferencialmente preservando a divisão por páginas.
+Avaliar como o leitor trata PDFs com múltiplas páginas, tabelas, quebras de linha e textos longos.
+Documentos digitalizados sem texto extraível ficam fora do MVP.
+Concluída quando: o texto de um PDF válido pode ser extraído e associado às páginas de origem.
+
+
+TASK-12 — Implementar divisão em chunks
+Dividir o texto extraído em trechos menores adequados ao modelo de embeddings.
+Definir tamanho dos chunks e sobreposição, avaliando o impacto dessas configurações na recuperação de contexto.
+Evitar perder a referência da página original durante a divisão.
+Concluída quando: o conteúdo do documento é dividido em chunks com metadados consistentes.
+
+
+TASK-13 — Configurar geração de embeddings
+Integrar o EmbeddingModel selecionado ao pipeline de ingestão.
+Gerar representações vetoriais para cada chunk e considerar limites de tokens, quantidade de requisições e eventuais falhas do provedor.
+Concluída quando: os chunks podem ser transformados em embeddings válidos.
+
+
+TASK-14 — Implementar indexação no pgvector
+Persistir os embeddings utilizando o PgVectorStore.
+Associar cada vetor ao documento original por meio de metadados como documentId, número da página e identificador do trecho.
+Definir uma estratégia para identificar e remover todos os vetores pertencentes a um documento.
+Concluída quando: os vetores são persistidos e podem ser encontrados por similaridade.
+
+
+TASK-15 — Implementar fluxo de processamento
+Integrar extração, chunking, embeddings e indexação em um único fluxo de aplicação.
+Atualizar corretamente os estados do documento e registrar falhas. Considerar o que acontece se apenas parte dos chunks for indexada.
+Para o MVP, o processamento pode ocorrer de forma síncrona. Não é necessário introduzir filas agora.
+Concluída quando: um PDF enviado passa por todo o pipeline e termina como READY ou FAILED, sem deixar uma indexação parcial ser considerada válida.
+
+
+TASK-16 — Validar a busca semântica
+Realizar consultas diretamente ao mecanismo de busca vetorial, antes de integrar o LLM.
+Testar perguntas com termos diferentes dos utilizados no PDF, mas semanticamente relacionados.
+Verificar se os resultados pertencem exclusivamente ao documento consultado.
+Concluída quando: a recuperação retorna chunks relevantes e respeita o documentId.
+
+
+Fase 4 — Chat inteligente com RAG
+Objetivo: permitir que o usuário faça perguntas sobre um PDF e receba respostas contextualizadas.
+TASK-17 — Definir o contrato de perguntas
+Criar o endpoint para enviar perguntas a um documento específico.
+Definir o formato da pergunta, identificador do documento e estrutura da resposta.
+Verificar se o documento existe e está pronto para consultas antes de processar a requisição.
+Concluída quando: a API recebe e valida perguntas relacionadas a um PDF.
+
+
+TASK-18 — Implementar recuperação contextual
+Criar o fluxo que recebe a pergunta, executa a busca por similaridade e seleciona os trechos mais relevantes.
+Definir inicialmente uma quantidade limitada de resultados e avaliar a necessidade de um limiar mínimo de similaridade.
+Aplicar obrigatoriamente o filtro pelo documento selecionado.
+Concluída quando: cada pergunta produz um conjunto de trechos relevantes e isolados por documento.
+
+
+TASK-19 — Integrar ChatClient e RAG
+Integrar o ChatClient do Spring AI ao contexto recuperado.
+Avaliar o uso de QuestionAnswerAdvisor ou de um fluxo explícito de recuperação e montagem de contexto, considerando a necessidade futura de retornar citações.
+Instruir o modelo a responder com base nas evidências fornecidas.
+Concluída quando: a aplicação responde perguntas utilizando o conteúdo do PDF.
+
+
+TASK-20 — Tratar ausência de informações
+Definir o comportamento da IA quando o documento não contém informações suficientes para responder.
+Evitar que conhecimento geral do modelo seja apresentado como se tivesse sido encontrado no PDF.
+Tratar também perguntas ambíguas, resultados de busca irrelevantes e documentos com pouco conteúdo.
+Concluída quando: a aplicação consegue informar que não encontrou evidências suficientes, em vez de inventar respostas.
+
+
+TASK-21 — Avaliar a qualidade do RAG
+Criar um pequeno conjunto de PDFs e perguntas de avaliação, contendo casos fáceis, difíceis e perguntas sem resposta.
+Comparar os chunks recuperados, a resposta gerada e sua fidelidade ao documento.
+Ajustar chunking, quantidade de resultados e instruções do modelo com base nos testes.
+Concluída quando: os principais cenários de perguntas apresentam resultados consistentes e verificáveis.
+
+
+Fase 5 — Conversas, memória e citações
+Objetivo: transformar a consulta isolada em uma experiência de conversa contínua, permitindo verificar a origem das respostas.
+TASK-22 — Modelar Conversation e Message
+Criar as entidades necessárias para armazenar conversas associadas a documentos.
+Registrar mensagens do usuário e do assistente, ordem, conteúdo e momento da interação.
+Concluída quando: conversas e mensagens podem ser persistidas e recuperadas.
+
+
+TASK-23 — Implementar histórico de conversas
+Associar perguntas e respostas às conversas existentes.
+Criar endpoints para consultar o histórico e recuperar mensagens em ordem cronológica.
+Definir o comportamento quando uma conversa pertence a um documento excluído.
+Concluída quando: o usuário consegue continuar uma conversa e recuperar suas mensagens anteriores.
+
+
+TASK-24 — Implementar contexto conversacional
+Permitir perguntas de acompanhamento, como "Explique melhor o segundo ponto", usando o histórico relevante da conversa.
+Distinguir histórico conversacional dos trechos recuperados pelo RAG.
+Evitar enviar todo o histórico indefinidamente e considerar como reformular consultas dependentes de mensagens anteriores.
+Concluída quando: perguntas de acompanhamento funcionam sem perder o vínculo com o PDF.
+
+
+TASK-25 — Implementar referências às fontes
+Retornar, junto da resposta, informações sobre os trechos recuperados que efetivamente dão suporte à resposta.
+Incluir página, identificação do trecho e uma pequena prévia textual.
+Não tratar automaticamente todo chunk recuperado como prova de que a resposta está correta.
+Concluída quando: o usuário consegue localizar e verificar os trechos utilizados como evidência.
+
+
+Fase 6 — Segurança, testes e robustez
+Objetivo: garantir que a aplicação trate corretamente erros, arquivos problemáticos e isolamento de documentos.
+TASK-26 — Implementar exclusão de documentos
+Criar o fluxo completo de exclusão, removendo metadados, arquivo armazenado, embeddings e dados associados, conforme a política definida para conversas.
+Considerar o que acontece quando uma das etapas falha, já que banco relacional, armazenamento de arquivos e índice vetorial não compartilham necessariamente uma única transação.
+Concluída quando: excluir um documento também elimina seus dados relacionados, sem deixar conteúdo consultável pelo RAG.
+
+
+TASK-27 — Padronizar tratamento de exceções
+Definir respostas HTTP consistentes para documentos inexistentes, uploads inválidos, erros de leitura, falhas do modelo e problemas no banco.
+Evitar expor credenciais, caminhos internos ou detalhes sensíveis de exceções nas respostas públicas.
+Concluída quando: os principais erros possuem respostas previsíveis e apropriadas.
+
+
+TASK-28 — Implementar testes unitários
+Cobrir as regras de validação, transições de status, preparação de chunks, tratamento de erros e comportamento dos serviços.
+Utilizar mocks nas dependências externas quando o objetivo do teste não exigir integração real.
+Concluída quando: as principais regras de negócio possuem testes automatizados.
+
+
+TASK-29 — Implementar testes de integração
+Utilizar Testcontainers com PostgreSQL e pgvector para verificar persistência, migrações, repositórios e consultas vetoriais.
+Testar também o upload e o ciclo de ingestão, isolando ou substituindo chamadas pagas ao provedor de IA quando necessário.
+Concluída quando: os fluxos críticos possuem testes de integração reproduzíveis.
+
+
+TASK-30 — Implementar proteções de conteúdo e limites
+Estabelecer limites de upload, de quantidade de páginas ou texto processado, de tamanho das perguntas e de consumo de tokens.
+Tratar o conteúdo dos PDFs como dados não confiáveis, impedindo que instruções contidas nos documentos substituam as regras do sistema.
+Caso o MVP continue sem autenticação, restringir seu uso ao ambiente local.
+Concluída quando: os principais limites operacionais são aplicados e documentos maliciosos não conseguem alterar as instruções do agente.
+
+
+Fase 7 — Interface, documentação e entrega
+Objetivo: transformar a API em uma aplicação demonstrável e fácil de executar.
+TASK-31 — Criar interface de gerenciamento de PDFs
+Desenvolver uma interface para enviar arquivos, visualizar documentos cadastrados, consultar status e excluir documentos.
+Exibir feedback de upload e processamento, inclusive mensagens de erro.
+Concluída quando: o usuário consegue gerenciar PDFs sem utilizar ferramentas externas de API.
+
+
+TASK-32 — Criar interface de chat
+Implementar a tela de perguntas e respostas associada ao documento selecionado.
+Apresentar estados de carregamento, histórico e mensagens de falha de maneira clara.
+Concluída quando: o usuário consegue conversar com um PDF pela interface web.
+
+
+TASK-33 — Integrar visualização do PDF e citações
+Permitir visualizar o documento selecionado e navegar até as páginas referenciadas nas respostas.
+Destacar as referências de maneira clara. O destaque exato de texto dentro da página pode ficar como melhoria posterior.
+Concluída quando: clicar em uma referência abre a página correspondente do PDF.
+
+
+TASK-34 — Preparar ambiente executável
+Organizar configurações de desenvolvimento e execução com Docker.
+Garantir volumes persistentes para banco e PDFs, além de variáveis necessárias para os modelos.
+Concluída quando: outro desenvolvedor consegue executar o projeto seguindo instruções documentadas.
+
+
+TASK-35 — Documentar o projeto
+Criar um README com objetivo, stack, arquitetura, requisitos, configuração, endpoints, limitações e exemplos de utilização.
+Incluir um diagrama do fluxo de ingestão e consulta RAG.
+Concluída quando: o repositório explica claramente como o sistema funciona e como executá-lo.
+
+
+TASK-36 — Realizar validação ponta a ponta
+Testar o fluxo completo: upload, processamento, perguntas, respostas com fontes, continuidade da conversa e exclusão.
+Executar também cenários de falha e revisar logs para identificar problemas não cobertos pelos testes automatizados.
+Concluída quando: o MVP pode ser demonstrado integralmente a partir de um ambiente limpo.
+
+
+
+Visão geral das entregas
+Fase	Tasks	Entrega
+1. Infraestrutura	01–05	Ambiente configurado
+2. Documentos	06–10	API de upload e listagem
+3. Ingestão	11–16	PDFs indexados no pgvector
+4. RAG	17–21	Perguntas e respostas fundamentadas
+5. Conversas	22–25	Histórico e citações
+6. Qualidade	26–30	API validada e testada
+7. Entrega	31–36	Aplicação demonstrável
+Algumas decisões importantes para não aumentar o escopo
+Eu manteria estas definições durante o desenvolvimento:
+- Um documento por conversa: cada chat consulta exclusivamente o PDF selecionado. Comparação entre documentos fica para uma segunda versão.
+- Sem autenticação no MVP: aplicação inicialmente local e de usuário único. Publicar para outros usuários exige adicionar autenticação e autorização.
+- Sem OCR: aceitar apenas PDFs com texto extraível.
+- Sem S3 inicialmente: guardar os arquivos localmente, mas evitar acoplar toda a lógica de negócio ao armazenamento.
+- Sem mensageria: o processamento síncrono é suficiente para a primeira versão, desde que existam limites adequados e tratamento de falhas.
+- Sem agentes autônomos: o projeto é de RAG, não de Tool Calling ou automação de tarefas.
+- Sem sumarização automática obrigatória: esse recurso pode ser adicionado após o chat estar funcionando.
+Critério final de sucesso
+O DocChat AI estará pronto quando conseguir executar este fluxo:
+1. Usuário envia um PDF
+
+2. Sistema extrai e indexa o conteúdo
+
+3. Usuário faz perguntas sobre o documento
+
+4. IA responde com base nos trechos recuperados
+
+5. Usuário verifica a resposta nas páginas citadas
+
+6. Conversa pode ser retomada posteriormente
+
+
+Minha sugestão de desenvolvimento: implemente uma task por vez, com commits pequenos. Ao final de cada fase, valide a entrega antes de iniciar a próxima. Assim você aprende Spring AI de maneira incremental e mantém o DocChat AI sempre em um estado funcional.
