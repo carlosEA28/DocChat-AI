@@ -73,6 +73,7 @@ Fase 3 — Pipeline de ingestão RAG
 
 Objetivo: transformar o conteúdo textual dos PDFs em embeddings pesquisáveis semanticamente.
 Esta fase implementa a base do RAG. É uma das mais importantes do projeto.
+
 TASK-11 — Implementar extração de texto
 Integrar o leitor de PDF do Spring AI para extrair o conteúdo do documento, preferencialmente preservando a divisão por páginas.
 Avaliar como o leitor trata PDFs com múltiplas páginas, tabelas, quebras de linha e textos longos.
@@ -84,6 +85,7 @@ TASK-12 — Implementar divisão em chunks
 Dividir o texto extraído em trechos menores adequados ao modelo de embeddings.
 Definir tamanho dos chunks e sobreposição, avaliando o impacto dessas configurações na recuperação de contexto.
 Evitar perder a referência da página original durante a divisão.
+
 Concluída quando: o conteúdo do documento é dividido em chunks com metadados consistentes.
 
 

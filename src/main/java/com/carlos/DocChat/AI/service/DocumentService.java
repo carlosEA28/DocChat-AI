@@ -9,10 +9,16 @@ import com.carlos.DocChat.AI.model.DocumentEntity;
 import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.repository.DocumentRepository;
 import com.carlos.DocChat.AI.util.helpers.PdfValidationHelper;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.reader.ExtractedTextFormatter;
+import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
+import org.springframework.ai.reader.pdf.config.PdfDocumentReaderConfig;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
 
@@ -72,6 +78,34 @@ public class DocumentService {
             throw new DocumentStorageException("Error uploading document to S3", e);
         }
     }
+
+    public List<Document> getDocumentText(String s3Key){
+        try {
+            byte[] pdfBytes = s3Config.downloadPdf(s3Key);
+
+            ByteArrayResource resource = new ByteArrayResource(pdfBytes);
+
+            PagePdfDocumentReader pdfReader = new PagePdfDocumentReader(
+                    resource,
+                    PdfDocumentReaderConfig.builder()
+                            .withPageTopMargin(0)
+                            .withPageExtractedTextFormatter(
+                                    ExtractedTextFormatter.builder()
+                                            .withNumberOfTopTextLinesToDelete(0)
+                                            .build()
+                            )
+                            .withPagesPerDocument(1)
+                            .build()
+            );
+
+                return pdfReader.get();
+
+        } catch (Exception e) {
+            throw new DocumentStorageException("Error downloading document from S3", e);
+        }
+    }
+
+
 
     private DocumentDto toDto(DocumentEntity entity) {
         return new DocumentDto(
