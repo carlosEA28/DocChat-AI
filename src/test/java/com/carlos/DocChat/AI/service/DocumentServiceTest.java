@@ -6,6 +6,7 @@ import com.carlos.DocChat.AI.model.DocumentEntity;
 import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.repository.DocumentRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.data.domain.Sort;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -23,7 +24,7 @@ import static org.mockito.Mockito.when;
 
 class DocumentServiceTest {
     private final DocumentRepository repository = mock(DocumentRepository.class);
-    private final DocumentService service = new DocumentService(repository, mock(S3Config.class));
+    private final DocumentService service = new DocumentService(repository, mock(S3Config.class), mock(VectorStore.class));
 
     @Test
     void listsEveryRegisteredDocumentWithPublicMetadata() {

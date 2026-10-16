@@ -3,6 +3,7 @@ package com.carlos.DocChat.AI.service;
 import com.carlos.DocChat.AI.config.aws.S3Config;
 import com.carlos.DocChat.AI.dto.document.DocumentDto;
 import com.carlos.DocChat.AI.dto.document.DocumentResponse;
+import com.carlos.DocChat.AI.dto.document.SearchResultsDto;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentProcessingException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentStorageException;
@@ -35,13 +36,26 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final S3Config s3Config;
     private final VectorStore vectorStore;
-    private final EmbeddingModel embeddingModel;
+    private final String RAG_PROMPT= """
+            You are a helpful assistant. Answer the questions using ONLY the information provided\
+            from the context below. If the answer is not contained within the context, say "Sorry, this information is not available in my context."\
+            
+            Be concise and factual.
+            
+            Context: 
+            
+            ---
+            {context}
+            
+            ---
+            
+            Question: {query}
+            """;
 
-    public DocumentService(DocumentRepository documentRepository, S3Config s3Config, VectorStore vectorStore, EmbeddingModel embeddingModel) {
+    public DocumentService(DocumentRepository documentRepository, S3Config s3Config, VectorStore vectorStore) {
         this.documentRepository = documentRepository;
         this.s3Config = s3Config;
         this.vectorStore = vectorStore;
-        this.embeddingModel = embeddingModel;
     }
 
     public List<DocumentResponse> list() {
@@ -170,6 +184,10 @@ public class DocumentService {
                     "Failed to ingest document: " + documentId, e
             );
         }
+    }
+
+    public List<SearchResultsDto> searchSimilarChunks(UUID documentId, String query){
+        return null;
     }
 
     private DocumentDto toDto(DocumentEntity entity) {
