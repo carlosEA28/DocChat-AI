@@ -47,8 +47,8 @@ public class DocumentController {
     }
 
     @PostMapping("/{id}/process")
-    public ResponseEntity<Void> process(@PathVariable UUID id) {
-        documentService.getDocumentText(id);
+    public ResponseEntity<Void> ingestDocument(@PathVariable UUID id) {
+        documentService.ingestDocument(id);
         return ResponseEntity.ok().build();
     }
 

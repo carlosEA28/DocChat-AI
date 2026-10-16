@@ -10,9 +10,11 @@ import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.repository.DocumentRepository;
 import com.carlos.DocChat.AI.util.helpers.PdfValidationHelper;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.document.DocumentTransformer;
 import org.springframework.ai.reader.ExtractedTextFormatter;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.reader.pdf.config.PdfDocumentReaderConfig;
+import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -80,9 +82,9 @@ public class DocumentService {
         }
     }
 
-    public List<Document> getDocumentText(UUID DocumentId) {
-        DocumentEntity Userdocument = documentRepository.findById(DocumentId)
-                .orElseThrow(() -> new DocumentNotFoundException(DocumentId));
+    public List<Document> ingestDocument(UUID documentId) {
+        DocumentEntity Userdocument = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
         String s3Key = Userdocument.getS3Key();
         try {
@@ -97,25 +99,28 @@ public class DocumentService {
                             .withPagesPerDocument(1)
                             .build()
             );
-
             List<Document> documents = pdfReader.get();
 
+            // Associa os chunks ao documento do seu banco
             documents.forEach(document -> {
-                String text = document.getText();
-                Map<String, Object> metadata = document.getMetadata();
-                String id = document.getId();
-
-                int pagina = (Integer) metadata.get(
-                        PagePdfDocumentReader.METADATA_START_PAGE_NUMBER
-                );
-
-                System.out.println("Texto da página: " + text);
-                System.out.println("Metadados: " + metadata);
-                System.out.println("ID: " + id);
-                System.out.println("Página: " + pagina);
+                document.getMetadata().put("documentId", documentId.toString());
             });
 
-            return documents;
+            // Configura o splitter
+            DocumentTransformer splitter = TokenTextSplitter.builder()
+                    .withChunkSize(500)
+                    .withMinChunkSizeChars(200)
+                    .withMinChunkLengthToEmbed(5)
+                    .withMaxNumChunks(1000)
+                    .withKeepSeparator(true)
+                    .build();
+
+            // Divide todas as páginas em chunks
+            List<Document> chunks = splitter.apply(documents);
+
+            System.out.println("Number of chunks created: " + chunks.size());
+            return chunks;
+
 
 
         } catch (Exception e) {
