@@ -46,6 +46,12 @@ public class DocumentController {
                 .body(new UploadResponse(document.id(), document.status()));
     }
 
+    @PostMapping("/{id}/process")
+    public ResponseEntity<Void> process(@PathVariable UUID id) {
+        documentService.getDocumentText(id);
+        return ResponseEntity.ok().build();
+    }
+
     public record UploadResponse(UUID id, DocumentStatus status) {
     }
 }

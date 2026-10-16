@@ -20,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -79,7 +80,11 @@ public class DocumentService {
         }
     }
 
-    public List<Document> getDocumentText(String s3Key){
+    public List<Document> getDocumentText(UUID DocumentId) {
+        DocumentEntity Userdocument = documentRepository.findById(DocumentId)
+                .orElseThrow(() -> new DocumentNotFoundException(DocumentId));
+
+        String s3Key = Userdocument.getS3Key();
         try {
             byte[] pdfBytes = s3Config.downloadPdf(s3Key);
 
@@ -89,16 +94,29 @@ public class DocumentService {
                     resource,
                     PdfDocumentReaderConfig.builder()
                             .withPageTopMargin(0)
-                            .withPageExtractedTextFormatter(
-                                    ExtractedTextFormatter.builder()
-                                            .withNumberOfTopTextLinesToDelete(0)
-                                            .build()
-                            )
                             .withPagesPerDocument(1)
                             .build()
             );
 
-                return pdfReader.get();
+            List<Document> documents = pdfReader.get();
+
+            documents.forEach(document -> {
+                String text = document.getText();
+                Map<String, Object> metadata = document.getMetadata();
+                String id = document.getId();
+
+                int pagina = (Integer) metadata.get(
+                        PagePdfDocumentReader.METADATA_START_PAGE_NUMBER
+                );
+
+                System.out.println("Texto da página: " + text);
+                System.out.println("Metadados: " + metadata);
+                System.out.println("ID: " + id);
+                System.out.println("Página: " + pagina);
+            });
+
+            return documents;
+
 
         } catch (Exception e) {
             throw new DocumentStorageException("Error downloading document from S3", e);
