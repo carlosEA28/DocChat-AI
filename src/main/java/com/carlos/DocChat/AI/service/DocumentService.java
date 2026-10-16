@@ -4,6 +4,7 @@ import com.carlos.DocChat.AI.config.aws.S3Config;
 import com.carlos.DocChat.AI.dto.document.DocumentDto;
 import com.carlos.DocChat.AI.dto.document.DocumentResponse;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
+import com.carlos.DocChat.AI.exceptions.service.DocumentProcessingException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentStorageException;
 import com.carlos.DocChat.AI.model.DocumentEntity;
 import com.carlos.DocChat.AI.model.DocumentStatus;
@@ -11,10 +12,13 @@ import com.carlos.DocChat.AI.repository.DocumentRepository;
 import com.carlos.DocChat.AI.util.helpers.PdfValidationHelper;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentTransformer;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.reader.ExtractedTextFormatter;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.reader.pdf.config.PdfDocumentReaderConfig;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -29,12 +33,15 @@ import java.util.UUID;
 public class DocumentService {
 
     private final DocumentRepository documentRepository;
-
     private final S3Config s3Config;
+    private final VectorStore vectorStore;
+    private final EmbeddingModel embeddingModel;
 
-    public DocumentService(DocumentRepository documentRepository, S3Config s3Config) {
+    public DocumentService(DocumentRepository documentRepository, S3Config s3Config, VectorStore vectorStore, EmbeddingModel embeddingModel) {
         this.documentRepository = documentRepository;
         this.s3Config = s3Config;
+        this.vectorStore = vectorStore;
+        this.embeddingModel = embeddingModel;
     }
 
     public List<DocumentResponse> list() {
@@ -86,8 +93,28 @@ public class DocumentService {
         DocumentEntity Userdocument = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
+        DocumentStatus previousStatus = Userdocument.getStatus();
+
         String s3Key = Userdocument.getS3Key();
+
+        if (Userdocument.getStatus() == DocumentStatus.READY) {
+            throw new DocumentProcessingException(
+                    "Document already ingested and ready for search",
+                    null
+            );
+        }
+
+        if (Userdocument.getStatus() == DocumentStatus.PROCESSING) {
+            throw new DocumentProcessingException(
+                    "Document is already being processed", null
+            );
+        }
         try {
+
+            // Atualiza o status do documento para PROCESSING
+            Userdocument.setStatus(DocumentStatus.PROCESSING);
+            documentRepository.save(Userdocument);
+
             byte[] pdfBytes = s3Config.downloadPdf(s3Key);
 
             ByteArrayResource resource = new ByteArrayResource(pdfBytes);
@@ -118,17 +145,32 @@ public class DocumentService {
             // Divide todas as páginas em chunks
             List<Document> chunks = splitter.apply(documents);
 
-            System.out.println("Number of chunks created: " + chunks.size());
+            if(chunks.isEmpty()){
+                throw new DocumentStorageException("No chunks were generated from the document", null);
+            }
+
+            if (previousStatus == DocumentStatus.FAILED) {
+                vectorStore.delete("documentId == '" + documentId + "'");
+            }
+
+            // Adiciona os chunks ao pgvectorstore para indexação e busca semântica e atualiza o status do documento para READY
+            vectorStore.add(chunks);
+            Userdocument.setStatus(DocumentStatus.READY);
+            documentRepository.save(Userdocument);
+
             return chunks;
 
 
 
         } catch (Exception e) {
-            throw new DocumentStorageException("Error downloading document from S3", e);
+            Userdocument.setStatus(DocumentStatus.FAILED);
+            documentRepository.save(Userdocument);
+
+            throw new DocumentProcessingException(
+                    "Failed to ingest document: " + documentId, e
+            );
         }
     }
-
-
 
     private DocumentDto toDto(DocumentEntity entity) {
         return new DocumentDto(
