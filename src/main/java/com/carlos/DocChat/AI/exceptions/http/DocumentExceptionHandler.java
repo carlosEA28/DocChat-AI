@@ -51,7 +51,7 @@ public class DocumentExceptionHandler {
 
     @ExceptionHandler({PdfTooLargeException.class, MaxUploadSizeExceededException.class})
     public ResponseEntity<ErrorResponse> pdfTooLarge(Exception exception) {
-        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+        return ResponseEntity.status(HttpStatus.CONTENT_TOO_LARGE)
                 .body(new ErrorResponse("O PDF deve ter no máximo 10 MB."));
     }
 

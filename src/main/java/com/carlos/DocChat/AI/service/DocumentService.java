@@ -1,9 +1,7 @@
 package com.carlos.DocChat.AI.service;
 
 import com.carlos.DocChat.AI.config.aws.S3Config;
-import com.carlos.DocChat.AI.dto.document.DocumentDto;
-import com.carlos.DocChat.AI.dto.document.DocumentResponse;
-import com.carlos.DocChat.AI.dto.document.SearchResultsDto;
+import com.carlos.DocChat.AI.dto.document.*;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentProcessingException;
@@ -12,6 +10,7 @@ import com.carlos.DocChat.AI.model.DocumentEntity;
 import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.repository.DocumentRepository;
 import com.carlos.DocChat.AI.util.helpers.PdfValidationHelper;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentTransformer;
 import org.springframework.ai.embedding.EmbeddingModel;
@@ -30,6 +29,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class DocumentService {
@@ -37,6 +37,7 @@ public class DocumentService {
     private final DocumentRepository documentRepository;
     private final S3Config s3Config;
     private final VectorStore vectorStore;
+    private final ChatClient chatClient;
     private final String RAG_PROMPT= """
             You are a helpful assistant. Answer the questions using ONLY the information provided\
             from the context below. If the answer is not contained within the context, say "Sorry, this information is not available in my context."\
@@ -53,7 +54,8 @@ public class DocumentService {
             Question: {query}
             """;
 
-    public DocumentService(DocumentRepository documentRepository, S3Config s3Config, VectorStore vectorStore) {
+    public DocumentService(DocumentRepository documentRepository, S3Config s3Config, VectorStore vectorStore , ChatClient.Builder chatClientBuilder) {
+        this.chatClient = chatClientBuilder.build();
         this.documentRepository = documentRepository;
         this.s3Config = s3Config;
         this.vectorStore = vectorStore;
@@ -187,7 +189,7 @@ public class DocumentService {
         }
     }
 
-    public List<SearchResultsDto> searchSimilarChunks(UUID documentId, String query){
+    public RagAnswerDto searchSimilarChunks(UUID documentId, String query){
 
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
@@ -205,9 +207,29 @@ public class DocumentService {
                         .build()
         );
 
-        return results.stream()
-                .map(SearchResultsDto::from)
+        String context = results.stream()
+                .map(d -> "[Document: " +
+                        d.getMetadata().get("documentId") + "]\n" +
+                        d.getText())
+                .collect(Collectors.joining("\n\n---\n\n"));
+
+
+        String prompt = String.format("Você é um assistente de pesquisa. Use o contexto abaixo para responder a pergunta. " +
+                        "Se não houver informações suficientes, diga 'Desculpe, não sei a resposta'.\n\n" +
+                        "Contexto:\n%s\n\nPergunta: %s",
+                context, query);
+
+        String answer = chatClient.prompt(prompt)
+                .user(u -> u.text(RAG_PROMPT).param("context", context).param("query", query))
+                .call()
+                .content();
+
+        List<CitationDTO> citations = results.stream()
+                .map(CitationDTO::from)
                 .toList();
+
+        return new RagAnswerDto(query, answer,citations);
+
     }
 
     private DocumentDto toDto(DocumentEntity entity) {

@@ -3,7 +3,7 @@ package com.carlos.DocChat.AI.controller;
 import com.carlos.DocChat.AI.dto.document.DocumentDto;
 import com.carlos.DocChat.AI.dto.document.DocumentResponse;
 import com.carlos.DocChat.AI.dto.document.QuestionRequest;
-import com.carlos.DocChat.AI.dto.document.QuestionResponse;
+import com.carlos.DocChat.AI.dto.document.RagAnswerDto;
 import com.carlos.DocChat.AI.exceptions.service.InvalidQuestionException;
 import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.service.DocumentService;
@@ -57,7 +57,7 @@ public class DocumentController {
     }
 
     @PostMapping(value = "/{id}/questions", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public QuestionResponse askQuestion(@PathVariable UUID id, @RequestBody QuestionRequest request) {
+    public RagAnswerDto askQuestion(@PathVariable UUID id, @RequestBody QuestionRequest request) {
         if (request == null || request.question() == null) {
             throw new InvalidQuestionException("A pergunta é obrigatória.");
         }
@@ -70,7 +70,7 @@ public class DocumentController {
             throw new InvalidQuestionException("A pergunta deve ter no máximo 2.000 caracteres.");
         }
 
-        return new QuestionResponse(id, question, documentService.searchSimilarChunks(id, question));
+        return documentService.searchSimilarChunks(id, question);
     }
 
     public record UploadResponse(UUID id, DocumentStatus status) {

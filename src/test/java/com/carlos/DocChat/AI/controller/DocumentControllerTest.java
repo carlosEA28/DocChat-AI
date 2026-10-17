@@ -2,7 +2,8 @@ package com.carlos.DocChat.AI.controller;
 
 import com.carlos.DocChat.AI.dto.document.DocumentDto;
 import com.carlos.DocChat.AI.dto.document.DocumentResponse;
-import com.carlos.DocChat.AI.dto.document.SearchResultsDto;
+import com.carlos.DocChat.AI.dto.document.CitationDTO;
+import com.carlos.DocChat.AI.dto.document.RagAnswerDto;
 import com.carlos.DocChat.AI.exceptions.http.DocumentExceptionHandler;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
@@ -90,31 +91,31 @@ class DocumentControllerTest {
     void asksQuestionAndReturnsMatchingChunks() throws Exception {
         UUID id = UUID.randomUUID();
         when(documentService.searchSimilarChunks(id, "Quais tecnologias?"))
-                .thenReturn(List.of(new SearchResultsDto("Java e PostgreSQL", 0.82)));
+                .thenReturn(new RagAnswerDto("Quais tecnologias?", "Java e PostgreSQL",
+                        List.of(new CitationDTO("arquivo.pdf", "página 1", 0.82, "Trecho relevante"))));
 
         mvc.perform(post("/documents/{id}/questions", id)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"question\":\"  Quais tecnologias?  \"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.documentId").value(id.toString()))
                 .andExpect(jsonPath("$.question").value("Quais tecnologias?"))
-                .andExpect(jsonPath("$.results[0].excerpt").value("Java e PostgreSQL"))
-                .andExpect(jsonPath("$.results[0].score").value(0.82))
-                .andExpect(jsonPath("$.results[0].documentId").doesNotExist());
+                .andExpect(jsonPath("$.answer").value("Java e PostgreSQL"))
+                .andExpect(jsonPath("$.citations[0].excerpt").value("Trecho relevante"))
+                .andExpect(jsonPath("$.citations[0].score").value(0.82));
         verify(documentService).searchSimilarChunks(id, "Quais tecnologias?");
     }
 
     @Test
-    void returnsEmptyResultsWhenSearchFindsNothing() throws Exception {
+    void returnsEmptyCitationsWhenSearchFindsNothing() throws Exception {
         UUID id = UUID.randomUUID();
         when(documentService.searchSimilarChunks(id, "Pergunta"))
-                .thenReturn(List.of());
+                .thenReturn(new RagAnswerDto("Pergunta", "Desculpe, não sei a resposta", List.of()));
 
         mvc.perform(post("/documents/{id}/questions", id)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"question\":\"Pergunta\"}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.results").isEmpty());
+                .andExpect(jsonPath("$.citations").isEmpty());
     }
 
     @Test

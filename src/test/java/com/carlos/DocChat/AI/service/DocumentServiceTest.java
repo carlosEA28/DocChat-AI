@@ -8,6 +8,7 @@ import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.repository.DocumentRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -18,6 +19,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -31,7 +33,20 @@ import static org.mockito.Mockito.when;
 class DocumentServiceTest {
     private final DocumentRepository repository = mock(DocumentRepository.class);
     private final VectorStore vectorStore = mock(VectorStore.class);
-    private final DocumentService service = new DocumentService(repository, mock(S3Config.class), vectorStore);
+    private final ChatClient.Builder chatBuilder = mock(ChatClient.Builder.class);
+    private final ChatClient chatClient = mock(ChatClient.class);
+    private final ChatClient.ChatClientRequestSpec requestSpec = mock(ChatClient.ChatClientRequestSpec.class);
+    private final ChatClient.CallResponseSpec responseSpec = mock(ChatClient.CallResponseSpec.class);
+    private final DocumentService service = createService();
+
+    private DocumentService createService() {
+        when(chatBuilder.build()).thenReturn(chatClient);
+        when(chatClient.prompt(any(String.class))).thenReturn(requestSpec);
+        when(requestSpec.user(any(Consumer.class))).thenReturn(requestSpec);
+        when(requestSpec.call()).thenReturn(responseSpec);
+        when(responseSpec.content()).thenReturn("Resposta");
+        return new DocumentService(repository, mock(S3Config.class), vectorStore, chatBuilder);
+    }
 
     @Test
     void listsEveryRegisteredDocumentWithPublicMetadata() {
@@ -82,9 +97,11 @@ class DocumentServiceTest {
 
         var results = service.searchSimilarChunks(ready.getId(), "Pergunta");
 
-        assertEquals(1, results.size());
-        assertEquals("Trecho relevante", results.getFirst().excerpt());
-        assertEquals(0.82, results.getFirst().score());
+        assertEquals("Pergunta", results.question());
+        assertEquals("Resposta", results.answer());
+        assertEquals(1, results.citations().size());
+        assertEquals("Trecho relevante", results.citations().getFirst().excerpt());
+        assertEquals(0.82, results.citations().getFirst().score());
         ArgumentCaptor<SearchRequest> captor = ArgumentCaptor.forClass(SearchRequest.class);
         verify(vectorStore).similaritySearch(captor.capture());
         SearchRequest search = captor.getValue();
@@ -101,7 +118,7 @@ class DocumentServiceTest {
         when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
 
-        assertTrue(service.searchSimilarChunks(ready.getId(), "Pergunta").isEmpty());
+        assertTrue(service.searchSimilarChunks(ready.getId(), "Pergunta").citations().isEmpty());
     }
 
     @Test
