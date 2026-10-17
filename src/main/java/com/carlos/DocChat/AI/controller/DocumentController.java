@@ -2,6 +2,9 @@ package com.carlos.DocChat.AI.controller;
 
 import com.carlos.DocChat.AI.dto.document.DocumentDto;
 import com.carlos.DocChat.AI.dto.document.DocumentResponse;
+import com.carlos.DocChat.AI.dto.document.QuestionRequest;
+import com.carlos.DocChat.AI.dto.document.QuestionResponse;
+import com.carlos.DocChat.AI.exceptions.service.InvalidQuestionException;
 import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.service.DocumentService;
 import org.springframework.http.HttpStatus;
@@ -10,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
@@ -50,6 +54,23 @@ public class DocumentController {
     public ResponseEntity<Void> ingestDocument(@PathVariable UUID id) {
         documentService.ingestDocument(id);
         return ResponseEntity.ok().build();
+    }
+
+    @PostMapping(value = "/{id}/questions", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public QuestionResponse askQuestion(@PathVariable UUID id, @RequestBody QuestionRequest request) {
+        if (request == null || request.question() == null) {
+            throw new InvalidQuestionException("A pergunta é obrigatória.");
+        }
+
+        String question = request.question().strip();
+        if (question.isEmpty()) {
+            throw new InvalidQuestionException("A pergunta não pode estar vazia.");
+        }
+        if (question.codePointCount(0, question.length()) > 2000) {
+            throw new InvalidQuestionException("A pergunta deve ter no máximo 2.000 caracteres.");
+        }
+
+        return new QuestionResponse(id, question, documentService.searchSimilarChunks(id, question));
     }
 
     public record UploadResponse(UUID id, DocumentStatus status) {

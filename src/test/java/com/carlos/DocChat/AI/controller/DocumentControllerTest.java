@@ -2,12 +2,15 @@ package com.carlos.DocChat.AI.controller;
 
 import com.carlos.DocChat.AI.dto.document.DocumentDto;
 import com.carlos.DocChat.AI.dto.document.DocumentResponse;
+import com.carlos.DocChat.AI.dto.document.SearchResultsDto;
 import com.carlos.DocChat.AI.exceptions.http.DocumentExceptionHandler;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
+import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
 import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.service.DocumentService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -16,10 +19,15 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -76,6 +84,81 @@ class DocumentControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(id.toString()))
                 .andExpect(jsonPath("$.status").value("PENDING"));
+    }
+
+    @Test
+    void asksQuestionAndReturnsMatchingChunks() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(documentService.searchSimilarChunks(id, "Quais tecnologias?"))
+                .thenReturn(List.of(new SearchResultsDto("Java e PostgreSQL", 0.82)));
+
+        mvc.perform(post("/documents/{id}/questions", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"question\":\"  Quais tecnologias?  \"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.documentId").value(id.toString()))
+                .andExpect(jsonPath("$.question").value("Quais tecnologias?"))
+                .andExpect(jsonPath("$.results[0].excerpt").value("Java e PostgreSQL"))
+                .andExpect(jsonPath("$.results[0].score").value(0.82))
+                .andExpect(jsonPath("$.results[0].documentId").doesNotExist());
+        verify(documentService).searchSimilarChunks(id, "Quais tecnologias?");
+    }
+
+    @Test
+    void returnsEmptyResultsWhenSearchFindsNothing() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(documentService.searchSimilarChunks(id, "Pergunta"))
+                .thenReturn(List.of());
+
+        mvc.perform(post("/documents/{id}/questions", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"question\":\"Pergunta\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results").isEmpty());
+    }
+
+    @Test
+    void rejectsInvalidQuestionsBeforeSearch() throws Exception {
+        UUID id = UUID.randomUUID();
+        for (String body : List.of("{}", "{\"question\":null}", "{\"question\":\"\"}",
+                "{\"question\":\"   \"}", "{\"question\":\"" + "a".repeat(2001) + "\"}")) {
+            mvc.perform(post("/documents/{id}/questions", id)
+                            .contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.error").exists());
+        }
+        mvc.perform(post("/documents/{id}/questions", id).contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").exists());
+        verify(documentService, never()).searchSimilarChunks(any(UUID.class), anyString());
+    }
+
+    @Test
+    void rejectsInvalidDocumentId() throws Exception {
+        mvc.perform(post("/documents/not-a-uuid/questions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"question\":\"Pergunta\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").exists());
+        verify(documentService, never()).searchSimilarChunks(any(UUID.class), anyString());
+    }
+
+    @Test
+    void reportsMissingAndUnreadyDocuments() throws Exception {
+        UUID missing = UUID.randomUUID();
+        UUID pending = UUID.randomUUID();
+        when(documentService.searchSimilarChunks(missing, "Pergunta"))
+                .thenThrow(new DocumentNotFoundException(missing));
+        when(documentService.searchSimilarChunks(pending, "Pergunta"))
+                .thenThrow(new DocumentNotReadyException(DocumentStatus.PENDING));
+
+        for (UUID id : List.of(missing, pending)) {
+            mvc.perform(post("/documents/{id}/questions", id)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"question\":\"Pergunta\"}"))
+                    .andExpect(status().is(id.equals(missing) ? 404 : 409))
+                    .andExpect(jsonPath("$.error").exists());
+        }
     }
 
     private DocumentResponse response(UUID id) {

@@ -5,6 +5,7 @@ import com.carlos.DocChat.AI.dto.document.DocumentDto;
 import com.carlos.DocChat.AI.dto.document.DocumentResponse;
 import com.carlos.DocChat.AI.dto.document.SearchResultsDto;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
+import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentProcessingException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentStorageException;
 import com.carlos.DocChat.AI.model.DocumentEntity;
@@ -187,7 +188,26 @@ public class DocumentService {
     }
 
     public List<SearchResultsDto> searchSimilarChunks(UUID documentId, String query){
-        return null;
+
+        DocumentEntity document = documentRepository.findById(documentId)
+                .orElseThrow(() -> new DocumentNotFoundException(documentId));
+
+        if (document.getStatus() != DocumentStatus.READY) {
+            throw new DocumentNotReadyException(document.getStatus());
+        }
+
+        List<Document> results = vectorStore.similaritySearch(
+                org.springframework.ai.vectorstore.SearchRequest.builder()
+                        .query(query)
+                        .topK(5)
+                        .similarityThreshold(0.4)
+                        .filterExpression("documentId == '" + documentId + "'")
+                        .build()
+        );
+
+        return results.stream()
+                .map(SearchResultsDto::from)
+                .toList();
     }
 
     private DocumentDto toDto(DocumentEntity entity) {

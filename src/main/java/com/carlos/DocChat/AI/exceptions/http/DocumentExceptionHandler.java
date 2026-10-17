@@ -2,15 +2,19 @@ package com.carlos.DocChat.AI.exceptions.http;
 
 import com.carlos.DocChat.AI.exceptions.service.DocumentPersistenceException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
+import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentReadException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentStorageException;
 import com.carlos.DocChat.AI.exceptions.service.InvalidPdfException;
+import com.carlos.DocChat.AI.exceptions.service.InvalidQuestionException;
 import com.carlos.DocChat.AI.exceptions.service.PdfTooLargeException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 public class DocumentExceptionHandler {
@@ -23,6 +27,26 @@ public class DocumentExceptionHandler {
     @ExceptionHandler(InvalidPdfException.class)
     public ResponseEntity<ErrorResponse> invalidPdf(InvalidPdfException exception) {
         return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidQuestionException.class)
+    public ResponseEntity<ErrorResponse> invalidQuestion(InvalidQuestionException exception) {
+        return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> invalidRequestBody(HttpMessageNotReadableException exception) {
+        return ResponseEntity.badRequest().body(new ErrorResponse("O corpo da requisição deve conter uma pergunta válida."));
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ErrorResponse> invalidDocumentId(MethodArgumentTypeMismatchException exception) {
+        return ResponseEntity.badRequest().body(new ErrorResponse("O identificador do documento deve ser um UUID válido."));
+    }
+
+    @ExceptionHandler(DocumentNotReadyException.class)
+    public ResponseEntity<ErrorResponse> documentNotReady(DocumentNotReadyException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(exception.getMessage()));
     }
 
     @ExceptionHandler({PdfTooLargeException.class, MaxUploadSizeExceededException.class})

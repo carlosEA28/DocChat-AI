@@ -118,6 +118,7 @@ Concluída quando: a recuperação retorna chunks relevantes e respeita o docume
 
 Fase 4 — Chat inteligente com RAG
 Objetivo: permitir que o usuário faça perguntas sobre um PDF e receba respostas contextualizadas.
+
 TASK-17 — Definir o contrato de perguntas
 Criar o endpoint para enviar perguntas a um documento específico.
 Definir o formato da pergunta, identificador do documento e estrutura da resposta.
