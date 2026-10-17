@@ -6,6 +6,11 @@ import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
 import com.carlos.DocChat.AI.model.DocumentEntity;
 import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.repository.DocumentRepository;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
@@ -16,6 +21,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.OffsetDateTime;
+import java.io.ByteArrayOutputStream;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,6 +38,7 @@ import static org.mockito.Mockito.when;
 
 class DocumentServiceTest {
     private final DocumentRepository repository = mock(DocumentRepository.class);
+    private final S3Config s3Config = mock(S3Config.class);
     private final VectorStore vectorStore = mock(VectorStore.class);
     private final ChatClient.Builder chatBuilder = mock(ChatClient.Builder.class);
     private final ChatClient chatClient = mock(ChatClient.class);
@@ -45,7 +52,7 @@ class DocumentServiceTest {
         when(requestSpec.user(any(Consumer.class))).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(responseSpec);
         when(responseSpec.content()).thenReturn("Resposta");
-        return new DocumentService(repository, mock(S3Config.class), vectorStore, chatBuilder);
+        return new DocumentService(repository, s3Config, vectorStore, chatBuilder);
     }
 
     @Test
@@ -92,7 +99,8 @@ class DocumentServiceTest {
         DocumentEntity ready = document(DocumentStatus.READY);
         when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
         Document chunk = Document.builder().text("Trecho relevante")
-                .metadata("documentId", ready.getId().toString()).score(0.82).build();
+                .metadata("documentId", ready.getId().toString())
+                .metadata("page_number", 3).score(0.82).build();
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(chunk));
 
         var results = service.searchSimilarChunks(ready.getId(), "Pergunta");
@@ -102,6 +110,10 @@ class DocumentServiceTest {
         assertEquals(1, results.citations().size());
         assertEquals("Trecho relevante", results.citations().getFirst().excerpt());
         assertEquals(0.82, results.citations().getFirst().score());
+        assertEquals("arquivo.pdf", results.citations().getFirst().title());
+        assertEquals(ready.getId().toString(), results.citations().getFirst().source());
+        assertEquals(3, results.citations().getFirst().page());
+        assertEquals("RETRIEVED_UNVERIFIED", results.citations().getFirst().evidenceStatus());
         ArgumentCaptor<SearchRequest> captor = ArgumentCaptor.forClass(SearchRequest.class);
         verify(vectorStore).similaritySearch(captor.capture());
         SearchRequest search = captor.getValue();
@@ -110,6 +122,73 @@ class DocumentServiceTest {
         assertEquals(0.4, search.getSimilarityThreshold());
         assertTrue(search.getFilterExpression().toString().contains(ready.getId().toString()));
         assertTrue(search.getFilterExpression().toString().contains("documentId"));
+    }
+
+    @Test
+    void keepsFullRetrievedChunkAndLeavesMissingPageUnknown() {
+        DocumentEntity ready = document(DocumentStatus.READY);
+        when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
+        String fullText = "Trecho com parágrafo.\n\n" + "conteúdo ".repeat(70);
+        Document chunk = Document.builder().text(fullText)
+                .metadata("documentId", ready.getId().toString()).score(0.73).build();
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(chunk));
+
+        var citation = service.searchSimilarChunks(ready.getId(), "Pergunta").citations().getFirst();
+
+        assertEquals(fullText, citation.excerpt());
+        assertEquals(null, citation.page());
+        assertEquals(0.73, citation.score());
+    }
+
+    @Test
+    void normalizesHorizontalPdfSpacingWithoutJoiningParagraphs() {
+        assertEquals("Título\nPrimeiro parágrafo.\n\nSegundo parágrafo.\nTabela A B",
+                DocumentService.normalizePdfText(
+                        "  Título  \nPrimeiro   parágrafo.\n\nSegundo\tparágrafo.\nTabela   A    B"));
+    }
+
+    @Test
+    void ingestionKeepsOriginalFilenameAndPhysicalPageOnEachChunk() throws Exception {
+        DocumentEntity pending = document(DocumentStatus.PENDING);
+        pending.setS3Key("uploads/internal-key.pdf");
+        when(repository.findById(pending.getId())).thenReturn(Optional.of(pending));
+        when(s3Config.downloadPdf(pending.getS3Key())).thenReturn(twoPagePdf());
+
+        service.ingestDocument(pending.getId());
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
+        verify(vectorStore).add(captor.capture());
+        List<Document> chunks = captor.getValue();
+        assertTrue(chunks.stream().anyMatch(chunk -> chunk.getText().contains("First page")
+                && Integer.valueOf(1).equals(chunk.getMetadata().get("page_number"))));
+        assertTrue(chunks.stream().anyMatch(chunk -> chunk.getText().contains("Second page")
+                && Integer.valueOf(2).equals(chunk.getMetadata().get("page_number"))));
+        for (Document chunk : chunks) {
+            assertEquals(pending.getId().toString(), chunk.getMetadata().get("documentId"));
+            assertEquals("arquivo.pdf", chunk.getMetadata().get("title"));
+            assertTrue(!chunk.getMetadata().containsKey("source"));
+            assertTrue(!chunk.getMetadata().containsKey("s3Key"));
+        }
+        assertEquals(DocumentStatus.READY, pending.getStatus());
+    }
+
+    private byte[] twoPagePdf() throws Exception {
+        try (PDDocument pdf = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            for (String text : List.of("First page content for search.", "Second page content for search.")) {
+                PDPage page = new PDPage();
+                pdf.addPage(page);
+                try (PDPageContentStream content = new PDPageContentStream(pdf, page)) {
+                    content.beginText();
+                    content.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 12);
+                    content.newLineAtOffset(50, 700);
+                    content.showText(text);
+                    content.endText();
+                }
+            }
+            pdf.save(output);
+            return output.toByteArray();
+        }
     }
 
     @Test

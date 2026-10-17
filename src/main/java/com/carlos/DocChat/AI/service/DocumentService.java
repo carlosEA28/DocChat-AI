@@ -13,8 +13,6 @@ import com.carlos.DocChat.AI.util.helpers.PdfValidationHelper;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentTransformer;
-import org.springframework.ai.embedding.EmbeddingModel;
-import org.springframework.ai.reader.ExtractedTextFormatter;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.reader.pdf.config.PdfDocumentReaderConfig;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
@@ -25,9 +23,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -145,10 +141,12 @@ public class DocumentService {
             );
             List<Document> documents = pdfReader.get();
 
-            // Associa os chunks ao documento do seu banco
-            documents.forEach(document -> {
-                document.getMetadata().put("documentId", documentId.toString());
-            });
+            // Cada Document representa uma página; o splitter preserva seus metadados.
+            documents = documents.stream().map(page -> {
+                page.getMetadata().put("documentId", documentId.toString());
+                page.getMetadata().put("title", Userdocument.getFilename());
+                return page.mutate().text(normalizePdfText(page.getText())).build();
+            }).toList();
 
             // Configura o splitter
             DocumentTransformer splitter = TokenTextSplitter.builder()
@@ -225,11 +223,17 @@ public class DocumentService {
                 .content();
 
         List<CitationDTO> citations = results.stream()
-                .map(CitationDTO::from)
+                .map(chunk -> CitationDTO.from(chunk, document.getFilename(), documentId))
                 .toList();
 
         return new RagAnswerDto(query, answer,citations);
 
+    }
+
+    static String normalizePdfText(String text) {
+        // Mantém as quebras de linha (inclusive as que separam parágrafos).
+        return text.replaceAll("[\\t\\p{Zs}]+", " ")
+                .replaceAll("(?m)^ | $", "");
     }
 
     private DocumentDto toDto(DocumentEntity entity) {

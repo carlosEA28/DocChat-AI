@@ -1,20 +1,21 @@
 package com.carlos.DocChat.AI.dto.document;
 
-public record CitationDTO(String title, String source, double score, String excerpt) {
+import org.springframework.ai.document.Document;
+import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 
-    // Método estático para criar um CitationDTO a partir de um Document
-    public static CitationDTO from(org.springframework.ai.document.Document document){
-        // Extrai os metadados do documento
-        String text = document.getText();
+import java.util.UUID;
 
+public record CitationDTO(String title, String source, Integer page, double score, String excerpt,
+                          String evidenceStatus) {
 
-        // Cria um resumo do texto, limitando a 400 caracteres e adicionando "..." se for maior
-        String excerpt = text.length() > 400 ? text.substring(0, 400) + "..." : text;
+    public static CitationDTO from(Document chunk, String filename, UUID documentId) {
+        Object pageValue = chunk.getMetadata().get(PagePdfDocumentReader.METADATA_START_PAGE_NUMBER);
+        Integer page = pageValue instanceof Number number ? number.intValue() : null;
+        Object titleValue = chunk.getMetadata().get("title");
+        String title = titleValue instanceof String value && !value.isBlank() ? value : filename;
 
-        // Cria e retorna um novo CitationDTO com os metadados e o resumo
-        return new CitationDTO((String) document.getMetadata().getOrDefault("title", "Unknown"),
-                (String) document.getMetadata().getOrDefault("source", "Unknown"),
-                document.getScore(),
-                excerpt);
+        // A busca fornece candidatos; a resposta do LLM não identifica quais utilizou.
+        return new CitationDTO(title, documentId.toString(), page, chunk.getScore(), chunk.getText(),
+                "RETRIEVED_UNVERIFIED");
     }
 }

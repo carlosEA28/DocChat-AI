@@ -92,7 +92,8 @@ class DocumentControllerTest {
         UUID id = UUID.randomUUID();
         when(documentService.searchSimilarChunks(id, "Quais tecnologias?"))
                 .thenReturn(new RagAnswerDto("Quais tecnologias?", "Java e PostgreSQL",
-                        List.of(new CitationDTO("arquivo.pdf", "página 1", 0.82, "Trecho relevante"))));
+                        List.of(new CitationDTO("arquivo.pdf", id.toString(), 1, 0.82,
+                                "Trecho relevante", "RETRIEVED_UNVERIFIED"))));
 
         mvc.perform(post("/documents/{id}/questions", id)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -101,6 +102,9 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.question").value("Quais tecnologias?"))
                 .andExpect(jsonPath("$.answer").value("Java e PostgreSQL"))
                 .andExpect(jsonPath("$.citations[0].excerpt").value("Trecho relevante"))
+                .andExpect(jsonPath("$.citations[0].page").value(1))
+                .andExpect(jsonPath("$.citations[0].source").value(id.toString()))
+                .andExpect(jsonPath("$.citations[0].evidenceStatus").value("RETRIEVED_UNVERIFIED"))
                 .andExpect(jsonPath("$.citations[0].score").value(0.82));
         verify(documentService).searchSimilarChunks(id, "Quais tecnologias?");
     }
