@@ -12,16 +12,15 @@ import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.repository.DocumentRepository;
 import com.carlos.DocChat.AI.util.helpers.PdfValidationHelper;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.client.advisor.SafeGuardAdvisor;
+import org.springframework.ai.chat.messages.SystemMessage;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentTransformer;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
 import org.springframework.ai.reader.pdf.config.PdfDocumentReaderConfig;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
@@ -38,20 +37,28 @@ public class DocumentService {
     private final S3Config s3Config;
     private final VectorStore vectorStore;
     private final ChatClient chatClient;
-    private final String RAG_PROMPT= """
-            You are a helpful assistant. Answer the questions using ONLY the information provided\
-            from the context below. If the answer is not contained within the context, say "Sorry, this information is not available in my context."\
-            
+    private static final String REWRITE_INSTRUCTIONS = """
+            Rewrite the latest user question as a standalone search query for the same document.
+            Resolve references using the conversation history below. Preserve the user's intent.
+            Do not answer the question, invent facts, or include explanations. Return only the search query.
+
+            Conversation history:
+            %s
+            """;
+    private static final String ANSWER_INSTRUCTIONS = """
+            Answer the latest user question using only the retrieved PDF excerpts below.
+            Conversation history may clarify what the user is referring to, but it is not
+            evidence about the PDF. If the excerpts do not support an answer, say
+            "Sorry, this information is not available in my context."
             Be concise and factual.
-            
-            Context: 
-            
+
+            Conversation history (reference context only):
+            %s
+
+            Retrieved PDF excerpts:
             ---
-            {context}
-            
+            %s
             ---
-            
-            Question: {query}
             """;
 
     public DocumentService(DocumentRepository documentRepository, S3Config s3Config, VectorStore vectorStore , ChatClient.Builder chatClientBuilder) {
@@ -191,8 +198,17 @@ public class DocumentService {
         }
     }
 
-    public RagAnswerDto searchSimilarChunks(UUID documentId, String query){
+    public RagAnswerDto searchSimilarChunks(UUID documentId, String query) {
+        return answer(findReadyDocument(documentId), query, query, "");
+    }
 
+    public RagAnswerDto answerWithHistory(UUID documentId, String question, String history) {
+        DocumentEntity document = findReadyDocument(documentId);
+        String searchQuery = history.isEmpty() ? question : rewriteSearchQuery(question, history);
+        return answer(document, question, searchQuery, history);
+    }
+
+    private DocumentEntity findReadyDocument(UUID documentId) {
         DocumentEntity document = documentRepository.findById(documentId)
                 .orElseThrow(() -> new DocumentNotFoundException(documentId));
 
@@ -200,9 +216,29 @@ public class DocumentService {
             throw new DocumentNotReadyException(document.getStatus());
         }
 
+        return document;
+    }
+
+    private String rewriteSearchQuery(String question, String history) {
+        try {
+            String rewritten = chatClient.prompt(new Prompt(
+                    new SystemMessage(REWRITE_INSTRUCTIONS.formatted(history)),
+                    new UserMessage(question))).call().content();
+            if (rewritten == null || rewritten.isBlank() || rewritten.codePointCount(0, rewritten.length()) > 2000) {
+                return question;
+            }
+            return rewritten.strip();
+        } catch (RuntimeException exception) {
+            return question;
+        }
+    }
+
+    private RagAnswerDto answer(DocumentEntity document, String question, String searchQuery,
+                                String history) {
+        UUID documentId = document.getId();
         List<Document> results = vectorStore.similaritySearch(
                 org.springframework.ai.vectorstore.SearchRequest.builder()
-                        .query(query)
+                        .query(searchQuery)
                         .topK(5)
                         .similarityThreshold(0.4)
                         .filterExpression("documentId == '" + documentId + "'")
@@ -216,18 +252,9 @@ public class DocumentService {
                 .collect(Collectors.joining("\n\n---\n\n"));
 
 
-        PromptTemplate promptTemplate = new PromptTemplate("""
-                You are a research assistant. Use the context below to answer the question.
-                If there is not enough information, say 'Sorry, but this answer is not available in my knowledge.'
-                Context: {context} Question: {query}
-                """);
-
-        Prompt prompt = promptTemplate.create(
-                java.util.Map.of("context", context, "query", query)
-        );
-
-        String answer = chatClient.prompt(prompt)
-                .user(u -> u.text(RAG_PROMPT).param("context", context).param("query", query))
+        String answer = chatClient.prompt(new Prompt(
+                        new SystemMessage(ANSWER_INSTRUCTIONS.formatted(history, context)),
+                        new UserMessage(question)))
                 .advisors(new TimmingAdviser(0))
                 .call()
                 .content();
@@ -236,7 +263,7 @@ public class DocumentService {
                 .map(chunk -> CitationDTO.from(chunk, document.getFilename(), documentId))
                 .toList();
 
-        return new RagAnswerDto(query, answer,citations);
+        return new RagAnswerDto(question, answer, citations);
 
     }
 

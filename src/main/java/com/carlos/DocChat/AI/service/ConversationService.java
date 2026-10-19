@@ -5,6 +5,7 @@ import com.carlos.DocChat.AI.dto.document.ConversationResponse;
 import com.carlos.DocChat.AI.dto.document.MessageResponse;
 import com.carlos.DocChat.AI.exceptions.service.ConversationNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
+import com.carlos.DocChat.AI.model.MessageEntity;
 import com.carlos.DocChat.AI.repository.ConversationRepository;
 import com.carlos.DocChat.AI.repository.DocumentRepository;
 import com.carlos.DocChat.AI.repository.MessageRepository;
@@ -16,6 +17,7 @@ import java.util.UUID;
 
 @Service
 public class ConversationService {
+    private static final int MAX_HISTORY_CHARACTERS = 12_000;
     private final DocumentService documentService;
     private final ConversationPersistenceService persistence;
     private final ConversationRepository conversations;
@@ -41,9 +43,26 @@ public class ConversationService {
     public ConversationAnswerDto continueConversation(UUID conversationId, String question) {
         var conversation = conversations.findByIdWithDocument(conversationId)
                 .orElseThrow(() -> new ConversationNotFoundException(conversationId));
-        var answer = documentService.searchSimilarChunks(conversation.getDocument().getId(), question);
+        String history = recentHistory(conversationId);
+        var answer = documentService.answerWithHistory(conversation.getDocument().getId(), question, history);
         persistence.append(conversationId, answer);
         return ConversationAnswerDto.from(conversationId, answer);
+    }
+
+    private String recentHistory(UUID conversationId) {
+        StringBuilder history = new StringBuilder();
+        for (MessageEntity message : messages.findTop8ByConversationIdOrderBySequenceNumberDesc(conversationId)) {
+            String line = message.getRole() + ": " + message.getContent();
+            int remaining = MAX_HISTORY_CHARACTERS - history.length();
+            if (line.length() >= remaining) {
+                if (history.isEmpty()) {
+                    history.append(line, 0, remaining);
+                }
+                break;
+            }
+            history.insert(0, line + "\n");
+        }
+        return history.toString().strip();
     }
 
     @Transactional(readOnly = true)

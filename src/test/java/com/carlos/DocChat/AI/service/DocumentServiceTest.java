@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -125,6 +126,7 @@ class DocumentServiceTest {
         assertEquals(0.4, search.getSimilarityThreshold());
         assertTrue(search.getFilterExpression().toString().contains(ready.getId().toString()));
         assertTrue(search.getFilterExpression().toString().contains("documentId"));
+        verify(chatClient).prompt(any(Prompt.class));
     }
 
     @Test
@@ -141,6 +143,72 @@ class DocumentServiceTest {
         assertEquals(fullText, citation.excerpt());
         assertEquals(null, citation.page());
         assertEquals(0.73, citation.score());
+    }
+
+    @Test
+    void followUpRewritesSearchButAnswersOriginalQuestionWithDistinctHistoryAndEvidence() {
+        DocumentEntity ready = document(DocumentStatus.READY);
+        when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
+        Document chunk = Document.builder().text("O segundo ponto trata de escalabilidade.")
+                .metadata("documentId", ready.getId().toString()).score(0.8).build();
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(chunk));
+        when(responseSpec.content()).thenReturn("Explique a escalabilidade do segundo ponto",
+                "O segundo ponto explica escalabilidade.");
+        String history = "USER: Quais são os pontos?\nASSISTANT: Primeiro: segurança. Segundo: escalabilidade.";
+
+        var result = service.answerWithHistory(ready.getId(), "Explique melhor o segundo ponto", history);
+
+        assertEquals("Explique melhor o segundo ponto", result.question());
+        assertEquals("O segundo ponto explica escalabilidade.", result.answer());
+        assertEquals(ready.getId().toString(), result.citations().getFirst().source());
+        ArgumentCaptor<SearchRequest> searchCaptor = ArgumentCaptor.forClass(SearchRequest.class);
+        verify(vectorStore).similaritySearch(searchCaptor.capture());
+        assertEquals("Explique a escalabilidade do segundo ponto", searchCaptor.getValue().getQuery());
+        assertTrue(searchCaptor.getValue().getFilterExpression().toString().contains(ready.getId().toString()));
+
+        ArgumentCaptor<Prompt> prompts = ArgumentCaptor.forClass(Prompt.class);
+        verify(chatClient, times(2)).prompt(prompts.capture());
+        List<org.springframework.ai.chat.messages.Message> rewrite = prompts.getAllValues().get(0).getInstructions();
+        List<org.springframework.ai.chat.messages.Message> answer = prompts.getAllValues().get(1).getInstructions();
+        assertTrue(rewrite.getFirst().getText().contains(history));
+        assertEquals("Explique melhor o segundo ponto", rewrite.getLast().getText());
+        assertTrue(answer.getFirst().getText().contains("O segundo ponto trata de escalabilidade."));
+        assertTrue(answer.getFirst().getText().contains("evidence about the PDF"));
+        assertTrue(answer.getFirst().getText().contains("Conversation history (reference context only):\n" + history));
+        assertTrue(answer.getFirst().getText().contains("Retrieved PDF excerpts:\n---"));
+        assertEquals("Explique melhor o segundo ponto", answer.getLast().getText());
+    }
+
+    @Test
+    void fallsBackToOriginalQuestionWhenReformulationFails() {
+        DocumentEntity ready = document(DocumentStatus.READY);
+        when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        when(responseSpec.content()).thenThrow(new IllegalStateException("rewrite unavailable"))
+                .thenReturn("Resposta");
+
+        var result = service.answerWithHistory(ready.getId(), "Explique o segundo ponto",
+                "USER: Pergunta\nASSISTANT: Resposta anterior");
+
+        assertEquals("Resposta", result.answer());
+        ArgumentCaptor<SearchRequest> searchCaptor = ArgumentCaptor.forClass(SearchRequest.class);
+        verify(vectorStore).similaritySearch(searchCaptor.capture());
+        assertEquals("Explique o segundo ponto", searchCaptor.getValue().getQuery());
+    }
+
+    @Test
+    void blankReformulationAlsoUsesOriginalQuestion() {
+        DocumentEntity ready = document(DocumentStatus.READY);
+        when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        when(responseSpec.content()).thenReturn("  ", "Resposta");
+
+        service.answerWithHistory(ready.getId(), "Explique o segundo ponto",
+                "USER: Pergunta\nASSISTANT: Resposta anterior");
+
+        ArgumentCaptor<SearchRequest> searchCaptor = ArgumentCaptor.forClass(SearchRequest.class);
+        verify(vectorStore).similaritySearch(searchCaptor.capture());
+        assertEquals("Explique o segundo ponto", searchCaptor.getValue().getQuery());
     }
 
     @Test

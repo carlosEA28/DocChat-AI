@@ -10,5 +10,7 @@ import java.util.UUID;
 public interface MessageRepository extends JpaRepository<MessageEntity, UUID> {
     List<MessageEntity> findByConversationIdOrderBySequenceNumberAsc(UUID conversationId);
 
+    List<MessageEntity> findTop8ByConversationIdOrderBySequenceNumberDesc(UUID conversationId);
+
     Optional<MessageEntity> findFirstByConversationIdOrderBySequenceNumberDesc(UUID conversationId);
 }
