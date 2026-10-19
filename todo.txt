@@ -1,6 +1,7 @@
 CONVERTER PARA STREAMS O INGESTION
 Normalização do texto extraído
 Tamanho das citações
+adicionar persona e melhorar a resposta do agente para nao ser tao genérico
 
 
 FEATURES NOVAS:

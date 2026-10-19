@@ -217,9 +217,9 @@ public class DocumentService {
 
 
         PromptTemplate promptTemplate = new PromptTemplate("""
-                Você é um assistente de pesquisa. Use o contexto abaixo para responder a pergunta. " +
-                                        "Se não houver informações suficientes, diga 'Desculpe, mas essa resposta não está disponível no meu conhecimento'
-                Contexto:{context} Pergunta:{query}
+                You are a research assistant. Use the context below to answer the question.
+                If there is not enough information, say 'Sorry, but this answer is not available in my knowledge.'
+                Context: {context} Question: {query}
                 """);
 
         Prompt prompt = promptTemplate.create(
@@ -239,6 +239,7 @@ public class DocumentService {
         return new RagAnswerDto(query, answer,citations);
 
     }
+
     static String normalizePdfText(String text) {
         // Mantém as quebras de linha (inclusive as que separam parágrafos).
         return text.replaceAll("[\\t\\p{Zs}]+", " ")

@@ -1,0 +1,5 @@
+$kind: http-request
+name: Ingest Document
+url: http://localhost:8080/documents/bbfff915-6b7e-4ca4-9737-6ab992f3bbdf/process
+method: POST
+order: 3559703063569195
