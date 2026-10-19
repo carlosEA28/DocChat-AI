@@ -1,5 +1,6 @@
 package com.carlos.DocChat.AI.service;
 
+import com.carlos.DocChat.AI.ai.advisors.TimmingAdviser;
 import com.carlos.DocChat.AI.config.aws.S3Config;
 import com.carlos.DocChat.AI.dto.document.*;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
@@ -11,6 +12,9 @@ import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.repository.DocumentRepository;
 import com.carlos.DocChat.AI.util.helpers.PdfValidationHelper;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.client.advisor.SafeGuardAdvisor;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.prompt.PromptTemplate;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.document.DocumentTransformer;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
@@ -212,13 +216,19 @@ public class DocumentService {
                 .collect(Collectors.joining("\n\n---\n\n"));
 
 
-        String prompt = String.format("Você é um assistente de pesquisa. Use o contexto abaixo para responder a pergunta. " +
-                        "Se não houver informações suficientes, diga 'Desculpe, não sei a resposta'.\n\n" +
-                        "Contexto:\n%s\n\nPergunta: %s",
-                context, query);
+        PromptTemplate promptTemplate = new PromptTemplate("""
+                Você é um assistente de pesquisa. Use o contexto abaixo para responder a pergunta. " +
+                                        "Se não houver informações suficientes, diga 'Desculpe, mas essa resposta não está disponível no meu conhecimento'
+                Contexto:{context} Pergunta:{query}
+                """);
+
+        Prompt prompt = promptTemplate.create(
+                java.util.Map.of("context", context, "query", query)
+        );
 
         String answer = chatClient.prompt(prompt)
                 .user(u -> u.text(RAG_PROMPT).param("context", context).param("query", query))
+                .advisors(new TimmingAdviser(0))
                 .call()
                 .content();
 
@@ -229,7 +239,6 @@ public class DocumentService {
         return new RagAnswerDto(query, answer,citations);
 
     }
-
     static String normalizePdfText(String text) {
         // Mantém as quebras de linha (inclusive as que separam parágrafos).
         return text.replaceAll("[\\t\\p{Zs}]+", " ")

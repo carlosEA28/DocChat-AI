@@ -1,1 +1,9 @@
 CONVERTER PARA STREAMS O INGESTION
+Normalização do texto extraído
+Tamanho das citações
+
+
+FEATURES NOVAS:
+
+-O user pode conectar mcps externos para consultar a internet ou docs externas
+- Permitir que o user configure uma persona personalizada para o agente, como "You are a helpful experienced" + person + "Tutor." Olhar no primeiro-projeto para ver como

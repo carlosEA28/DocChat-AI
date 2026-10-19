@@ -156,6 +156,7 @@ Concluída quando: os principais cenários de perguntas apresentam resultados co
 
 Fase 5 — Conversas, memória e citações
 Objetivo: transformar a consulta isolada em uma experiência de conversa contínua, permitindo verificar a origem das respostas.
+
 TASK-22 — Modelar Conversation e Message
 Criar as entidades necessárias para armazenar conversas associadas a documentos.
 Registrar mensagens do usuário e do assistente, ordem, conteúdo e momento da interação.
