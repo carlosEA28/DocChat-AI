@@ -44,7 +44,7 @@ class DocumentDeletionServiceTest {
         InOrder order = inOrder(documents, vectorStore, s3Config);
         order.verify(vectorStore).delete("documentId == '" + document.getId() + "'");
         order.verify(s3Config).deletePdf(document.getS3Key());
-        order.verify(documents).deleteById(document.getId());
+        order.verify(documents).deleteDocumentById(document.getId());
     }
 
     @Test
@@ -58,7 +58,7 @@ class DocumentDeletionServiceTest {
 
         service.deleteByConversationId(conversationId);
 
-        verify(documents).deleteById(document.getId());
+        verify(documents).deleteDocumentById(document.getId());
         verify(s3Config).deletePdf(document.getS3Key());
     }
 
@@ -72,7 +72,7 @@ class DocumentDeletionServiceTest {
         when(documents.findById(processing.getId())).thenReturn(Optional.of(processing));
         assertThrows(DocumentDeletionConflictException.class,
                 () -> service.deleteByDocumentId(processing.getId()));
-        verify(documents, never()).deleteById(processing.getId());
+        verify(documents, never()).deleteDocumentById(processing.getId());
         verifyNoInteractions(vectorStore, s3Config);
     }
 
@@ -85,11 +85,11 @@ class DocumentDeletionServiceTest {
 
         assertThrows(DocumentDeletionException.class, () -> service.deleteByDocumentId(document.getId()));
         verify(s3Config, never()).deletePdf(document.getS3Key());
-        verify(documents, never()).deleteById(document.getId());
+        verify(documents, never()).deleteDocumentById(document.getId());
 
         service.deleteByDocumentId(document.getId());
         verify(s3Config).deletePdf(document.getS3Key());
-        verify(documents).deleteById(document.getId());
+        verify(documents).deleteDocumentById(document.getId());
     }
 
     @Test
@@ -100,10 +100,10 @@ class DocumentDeletionServiceTest {
                 .when(s3Config).deletePdf(document.getS3Key());
 
         assertThrows(DocumentDeletionException.class, () -> service.deleteByDocumentId(document.getId()));
-        verify(documents, never()).deleteById(document.getId());
+        verify(documents, never()).deleteDocumentById(document.getId());
 
         service.deleteByDocumentId(document.getId());
-        verify(documents).deleteById(document.getId());
+        verify(documents).deleteDocumentById(document.getId());
     }
 
     @Test
@@ -111,7 +111,7 @@ class DocumentDeletionServiceTest {
         DocumentEntity document = document(DocumentStatus.READY);
         when(documents.findById(document.getId())).thenReturn(Optional.of(document));
         doThrow(new IllegalStateException("database offline")).doNothing()
-                .when(documents).deleteById(document.getId());
+                .when(documents).deleteDocumentById(document.getId());
 
         assertThrows(DocumentDeletionException.class, () -> service.deleteByDocumentId(document.getId()));
 
@@ -119,7 +119,7 @@ class DocumentDeletionServiceTest {
         verify(vectorStore, org.mockito.Mockito.times(2))
                 .delete("documentId == '" + document.getId() + "'");
         verify(s3Config, org.mockito.Mockito.times(2)).deletePdf(document.getS3Key());
-        verify(documents, org.mockito.Mockito.times(2)).deleteById(document.getId());
+        verify(documents, org.mockito.Mockito.times(2)).deleteDocumentById(document.getId());
     }
 
     private DocumentEntity document(DocumentStatus status) {

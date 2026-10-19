@@ -46,7 +46,7 @@ public class DocumentDeletionService {
         try {
             vectorStore.delete("documentId == '" + documentId + "'");
             s3Config.deletePdf(document.getS3Key());
-            documents.deleteById(documentId);
+            documents.deleteDocumentById(documentId);
         } catch (RuntimeException exception) {
             throw new DocumentDeletionException(exception);
         }
