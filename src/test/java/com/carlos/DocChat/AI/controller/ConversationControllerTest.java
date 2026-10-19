@@ -6,6 +6,7 @@ import com.carlos.DocChat.AI.exceptions.http.DocumentExceptionHandler;
 import com.carlos.DocChat.AI.exceptions.service.ConversationNotFoundException;
 import com.carlos.DocChat.AI.model.MessageRole;
 import com.carlos.DocChat.AI.service.ConversationService;
+import com.carlos.DocChat.AI.service.DocumentDeletionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -21,17 +22,19 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class ConversationControllerTest {
     private final ConversationService service = mock(ConversationService.class);
+    private final DocumentDeletionService deletionService = mock(DocumentDeletionService.class);
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        mvc = MockMvcBuilders.standaloneSetup(new ConversationController(service))
+        mvc = MockMvcBuilders.standaloneSetup(new ConversationController(service, deletionService))
                 .setControllerAdvice(new DocumentExceptionHandler()).build();
     }
 
@@ -77,5 +80,12 @@ class ConversationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"question\":\"  \"}"))
                 .andExpect(status().isBadRequest());
         verifyNoInteractions(service);
+    }
+
+    @Test
+    void deletesWholeDocumentThroughConversation() throws Exception {
+        UUID id = UUID.randomUUID();
+        mvc.perform(delete("/conversations/{id}", id)).andExpect(status().isNoContent());
+        verify(deletionService).deleteByConversationId(id);
     }
 }

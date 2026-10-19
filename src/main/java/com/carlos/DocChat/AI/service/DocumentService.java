@@ -82,8 +82,8 @@ public class DocumentService {
     }
 
     public DocumentDto upload(MultipartFile file) {
-
-        String key = "uploads/" + file.getOriginalFilename();
+        UUID documentId = UUID.randomUUID();
+        String key = "uploads/" + documentId + ".pdf";
 
         // Valida o tamanho do pdf
         PdfValidationHelper.validateSize(file.getSize());
@@ -95,7 +95,7 @@ public class DocumentService {
             s3Config.uploadPdf(key, file.getBytes(), file.getContentType());
 
             DocumentEntity document = new DocumentEntity();
-            document.setId(UUID.randomUUID());
+            document.setId(documentId);
             document.setFilename(file.getOriginalFilename());
             document.setContentType(file.getContentType());
             document.setSize(file.getSize());

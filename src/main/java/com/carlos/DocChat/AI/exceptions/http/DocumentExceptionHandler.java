@@ -2,6 +2,8 @@ package com.carlos.DocChat.AI.exceptions.http;
 
 import com.carlos.DocChat.AI.exceptions.service.DocumentPersistenceException;
 import com.carlos.DocChat.AI.exceptions.service.ConversationNotFoundException;
+import com.carlos.DocChat.AI.exceptions.service.DocumentDeletionConflictException;
+import com.carlos.DocChat.AI.exceptions.service.DocumentDeletionException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentReadException;
@@ -54,6 +56,17 @@ public class DocumentExceptionHandler {
     @ExceptionHandler(DocumentNotReadyException.class)
     public ResponseEntity<ErrorResponse> documentNotReady(DocumentNotReadyException exception) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(exception.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentDeletionConflictException.class)
+    public ResponseEntity<ErrorResponse> deletionConflict(DocumentDeletionConflictException exception) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(new ErrorResponse(exception.getMessage()));
+    }
+
+    @ExceptionHandler(DocumentDeletionException.class)
+    public ResponseEntity<ErrorResponse> deletionFailure(DocumentDeletionException exception) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ErrorResponse("Não foi possível concluir a exclusão. Tente novamente."));
     }
 
     @ExceptionHandler({PdfTooLargeException.class, MaxUploadSizeExceededException.class})

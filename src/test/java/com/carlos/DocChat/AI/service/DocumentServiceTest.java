@@ -20,6 +20,7 @@ import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.data.domain.Sort;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.OffsetDateTime;
@@ -38,6 +39,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.ArgumentMatchers.eq;
 
 class DocumentServiceTest {
     private final DocumentRepository repository = mock(DocumentRepository.class);
@@ -244,6 +246,19 @@ class DocumentServiceTest {
         assertEquals(DocumentStatus.READY, pending.getStatus());
     }
 
+    @Test
+    void uploadUsesUniqueKeyInsteadOfOriginalFilename() throws Exception {
+        byte[] pdf = twoPagePdf();
+        MockMultipartFile file = new MockMultipartFile("file", "arquivo.pdf", "application/pdf", pdf);
+        when(repository.save(any(DocumentEntity.class))).thenAnswer(call -> call.getArgument(0));
+
+        var result = service.upload(file);
+
+        assertEquals("arquivo.pdf", result.filename());
+        assertEquals("uploads/" + result.id() + ".pdf", result.s3Key());
+        verify(s3Config).uploadPdf(eq(result.s3Key()), any(byte[].class), eq("application/pdf"));
+    }
+
     private byte[] twoPagePdf() throws Exception {
         try (PDDocument pdf = new PDDocument(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             for (String text : List.of("First page content for search.", "Second page content for search.")) {
@@ -276,7 +291,8 @@ class DocumentServiceTest {
         UUID unknown = UUID.randomUUID();
         assertThrows(DocumentNotFoundException.class, () -> service.searchSimilarChunks(unknown, "Pergunta"));
 
-        for (DocumentStatus status : List.of(DocumentStatus.PENDING, DocumentStatus.PROCESSING, DocumentStatus.FAILED)) {
+        for (DocumentStatus status : List.of(DocumentStatus.PENDING, DocumentStatus.PROCESSING,
+                DocumentStatus.FAILED)) {
             DocumentEntity document = document(status);
             when(repository.findById(document.getId())).thenReturn(Optional.of(document));
             assertThrows(DocumentNotReadyException.class,

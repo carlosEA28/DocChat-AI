@@ -8,9 +8,12 @@ import com.carlos.DocChat.AI.dto.document.ConversationResponse;
 import com.carlos.DocChat.AI.exceptions.http.DocumentExceptionHandler;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
+import com.carlos.DocChat.AI.exceptions.service.DocumentDeletionConflictException;
+import com.carlos.DocChat.AI.exceptions.service.DocumentDeletionException;
 import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.service.DocumentService;
 import com.carlos.DocChat.AI.service.ConversationService;
+import com.carlos.DocChat.AI.service.DocumentDeletionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -29,6 +32,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -37,11 +41,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class DocumentControllerTest {
     private final DocumentService documentService = mock(DocumentService.class);
     private final ConversationService conversationService = mock(ConversationService.class);
+    private final DocumentDeletionService deletionService = mock(DocumentDeletionService.class);
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        mvc = MockMvcBuilders.standaloneSetup(new DocumentController(documentService, conversationService))
+        mvc = MockMvcBuilders.standaloneSetup(new DocumentController(documentService, conversationService,
+                        deletionService))
                 .setControllerAdvice(new DocumentExceptionHandler())
                 .build();
     }
@@ -183,6 +189,22 @@ class DocumentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(conversationId.toString()))
                 .andExpect(jsonPath("$[0].documentId").value(documentId.toString()));
+    }
+
+    @Test
+    void deletesDocumentOrReportsConflictAndRetryableFailure() throws Exception {
+        UUID ready = UUID.randomUUID();
+        UUID processing = UUID.randomUUID();
+        UUID failed = UUID.randomUUID();
+        org.mockito.Mockito.doThrow(new DocumentDeletionConflictException())
+                .when(deletionService).deleteByDocumentId(processing);
+        org.mockito.Mockito.doThrow(new DocumentDeletionException(new IllegalStateException()))
+                .when(deletionService).deleteByDocumentId(failed);
+
+        mvc.perform(delete("/documents/{id}", ready)).andExpect(status().isNoContent());
+        mvc.perform(delete("/documents/{id}", processing)).andExpect(status().isConflict());
+        mvc.perform(delete("/documents/{id}", failed)).andExpect(status().isServiceUnavailable());
+        verify(deletionService).deleteByDocumentId(ready);
     }
 
     private DocumentResponse response(UUID id) {
