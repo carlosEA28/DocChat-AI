@@ -54,4 +54,8 @@ public class ConversationEntity {
     public OffsetDateTime getUpdatedAt() {
         return updatedAt;
     }
+
+    public void touch() {
+        this.updatedAt = OffsetDateTime.now();
+    }
 }

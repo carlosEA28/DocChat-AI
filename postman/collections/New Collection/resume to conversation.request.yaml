@@ -1,0 +1,10 @@
+$kind: http-request
+url: http://localhost:8080/conversations/2e66513e-3cdb-4723-8815-1266dc8eb65b/questions
+method: POST
+body:
+  type: json
+  content: |-
+    {
+      "question":"Quais são os pontos principais?"
+    }
+order: 4421759996282510

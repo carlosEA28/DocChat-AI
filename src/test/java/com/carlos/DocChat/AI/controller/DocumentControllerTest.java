@@ -3,12 +3,14 @@ package com.carlos.DocChat.AI.controller;
 import com.carlos.DocChat.AI.dto.document.DocumentDto;
 import com.carlos.DocChat.AI.dto.document.DocumentResponse;
 import com.carlos.DocChat.AI.dto.document.CitationDTO;
-import com.carlos.DocChat.AI.dto.document.RagAnswerDto;
+import com.carlos.DocChat.AI.dto.document.ConversationAnswerDto;
+import com.carlos.DocChat.AI.dto.document.ConversationResponse;
 import com.carlos.DocChat.AI.exceptions.http.DocumentExceptionHandler;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
 import com.carlos.DocChat.AI.model.DocumentStatus;
 import com.carlos.DocChat.AI.service.DocumentService;
+import com.carlos.DocChat.AI.service.ConversationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -34,11 +36,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 class DocumentControllerTest {
     private final DocumentService documentService = mock(DocumentService.class);
+    private final ConversationService conversationService = mock(ConversationService.class);
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
-        mvc = MockMvcBuilders.standaloneSetup(new DocumentController(documentService))
+        mvc = MockMvcBuilders.standaloneSetup(new DocumentController(documentService, conversationService))
                 .setControllerAdvice(new DocumentExceptionHandler())
                 .build();
     }
@@ -90,8 +93,9 @@ class DocumentControllerTest {
     @Test
     void asksQuestionAndReturnsMatchingChunks() throws Exception {
         UUID id = UUID.randomUUID();
-        when(documentService.searchSimilarChunks(id, "Quais tecnologias?"))
-                .thenReturn(new RagAnswerDto("Quais tecnologias?", "Java e PostgreSQL",
+        UUID conversationId = UUID.randomUUID();
+        when(conversationService.start(id, "Quais tecnologias?"))
+                .thenReturn(new ConversationAnswerDto(conversationId, "Quais tecnologias?", "Java e PostgreSQL",
                         List.of(new CitationDTO("arquivo.pdf", id.toString(), 1, 0.82,
                                 "Trecho relevante", "RETRIEVED_UNVERIFIED"))));
 
@@ -99,6 +103,7 @@ class DocumentControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"question\":\"  Quais tecnologias?  \"}"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.conversationId").value(conversationId.toString()))
                 .andExpect(jsonPath("$.question").value("Quais tecnologias?"))
                 .andExpect(jsonPath("$.answer").value("Java e PostgreSQL"))
                 .andExpect(jsonPath("$.citations[0].excerpt").value("Trecho relevante"))
@@ -106,14 +111,14 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.citations[0].source").value(id.toString()))
                 .andExpect(jsonPath("$.citations[0].evidenceStatus").value("RETRIEVED_UNVERIFIED"))
                 .andExpect(jsonPath("$.citations[0].score").value(0.82));
-        verify(documentService).searchSimilarChunks(id, "Quais tecnologias?");
+        verify(conversationService).start(id, "Quais tecnologias?");
     }
 
     @Test
     void returnsEmptyCitationsWhenSearchFindsNothing() throws Exception {
         UUID id = UUID.randomUUID();
-        when(documentService.searchSimilarChunks(id, "Pergunta"))
-                .thenReturn(new RagAnswerDto("Pergunta", "Desculpe, não sei a resposta", List.of()));
+        when(conversationService.start(id, "Pergunta"))
+                .thenReturn(new ConversationAnswerDto(UUID.randomUUID(), "Pergunta", "Desculpe, não sei a resposta", List.of()));
 
         mvc.perform(post("/documents/{id}/questions", id)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -135,7 +140,7 @@ class DocumentControllerTest {
         mvc.perform(post("/documents/{id}/questions", id).contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").exists());
-        verify(documentService, never()).searchSimilarChunks(any(UUID.class), anyString());
+        verify(conversationService, never()).start(any(UUID.class), anyString());
     }
 
     @Test
@@ -145,16 +150,16 @@ class DocumentControllerTest {
                         .content("{\"question\":\"Pergunta\"}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").exists());
-        verify(documentService, never()).searchSimilarChunks(any(UUID.class), anyString());
+        verify(conversationService, never()).start(any(UUID.class), anyString());
     }
 
     @Test
     void reportsMissingAndUnreadyDocuments() throws Exception {
         UUID missing = UUID.randomUUID();
         UUID pending = UUID.randomUUID();
-        when(documentService.searchSimilarChunks(missing, "Pergunta"))
+        when(conversationService.start(missing, "Pergunta"))
                 .thenThrow(new DocumentNotFoundException(missing));
-        when(documentService.searchSimilarChunks(pending, "Pergunta"))
+        when(conversationService.start(pending, "Pergunta"))
                 .thenThrow(new DocumentNotReadyException(DocumentStatus.PENDING));
 
         for (UUID id : List.of(missing, pending)) {
@@ -164,6 +169,20 @@ class DocumentControllerTest {
                     .andExpect(status().is(id.equals(missing) ? 404 : 409))
                     .andExpect(jsonPath("$.error").exists());
         }
+    }
+
+    @Test
+    void listsConversationsForDocument() throws Exception {
+        UUID documentId = UUID.randomUUID();
+        UUID conversationId = UUID.randomUUID();
+        when(conversationService.list(documentId)).thenReturn(List.of(new ConversationResponse(
+                conversationId, documentId, OffsetDateTime.parse("2026-10-15T10:00:00Z"),
+                OffsetDateTime.parse("2026-10-15T11:00:00Z"))));
+
+        mvc.perform(get("/documents/{id}/conversations", documentId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(conversationId.toString()))
+                .andExpect(jsonPath("$[0].documentId").value(documentId.toString()));
     }
 
     private DocumentResponse response(UUID id) {

@@ -1,6 +1,7 @@
 package com.carlos.DocChat.AI.exceptions.http;
 
 import com.carlos.DocChat.AI.exceptions.service.DocumentPersistenceException;
+import com.carlos.DocChat.AI.exceptions.service.ConversationNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotFoundException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentNotReadyException;
 import com.carlos.DocChat.AI.exceptions.service.DocumentReadException;
@@ -24,6 +25,12 @@ public class DocumentExceptionHandler {
                 .body(new ErrorResponse(exception.getMessage()));
     }
 
+    @ExceptionHandler(ConversationNotFoundException.class)
+    public ResponseEntity<ErrorResponse> conversationNotFound(ConversationNotFoundException exception) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(new ErrorResponse(exception.getMessage()));
+    }
+
     @ExceptionHandler(InvalidPdfException.class)
     public ResponseEntity<ErrorResponse> invalidPdf(InvalidPdfException exception) {
         return ResponseEntity.badRequest().body(new ErrorResponse(exception.getMessage()));
@@ -41,7 +48,7 @@ public class DocumentExceptionHandler {
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     public ResponseEntity<ErrorResponse> invalidDocumentId(MethodArgumentTypeMismatchException exception) {
-        return ResponseEntity.badRequest().body(new ErrorResponse("O identificador do documento deve ser um UUID válido."));
+        return ResponseEntity.badRequest().body(new ErrorResponse("O identificador deve ser um UUID válido."));
     }
 
     @ExceptionHandler(DocumentNotReadyException.class)

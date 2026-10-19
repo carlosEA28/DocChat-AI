@@ -1,0 +1,10 @@
+$kind: http-request
+url: http://localhost:8080/conversations/2e66513e-3cdb-4723-8815-1266dc8eb65b/messages
+method: GET
+body:
+  type: json
+  content: |-
+    {
+      "question": "Como o candidato automatizou a infraestrutura na nuvem?"
+    }
+order: 4496413489082733

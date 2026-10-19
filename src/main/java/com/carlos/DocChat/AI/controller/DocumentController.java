@@ -2,11 +2,13 @@ package com.carlos.DocChat.AI.controller;
 
 import com.carlos.DocChat.AI.dto.document.DocumentDto;
 import com.carlos.DocChat.AI.dto.document.DocumentResponse;
+import com.carlos.DocChat.AI.dto.document.ConversationAnswerDto;
+import com.carlos.DocChat.AI.dto.document.ConversationResponse;
 import com.carlos.DocChat.AI.dto.document.QuestionRequest;
-import com.carlos.DocChat.AI.dto.document.RagAnswerDto;
-import com.carlos.DocChat.AI.exceptions.service.InvalidQuestionException;
 import com.carlos.DocChat.AI.model.DocumentStatus;
+import com.carlos.DocChat.AI.service.ConversationService;
 import com.carlos.DocChat.AI.service.DocumentService;
+import com.carlos.DocChat.AI.service.QuestionValidation;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,9 +28,11 @@ import java.util.UUID;
 @RequestMapping("/documents")
 public class DocumentController {
     private final DocumentService documentService;
+    private final ConversationService conversationService;
 
-    public DocumentController(DocumentService documentService) {
+    public DocumentController(DocumentService documentService, ConversationService conversationService) {
         this.documentService = documentService;
+        this.conversationService = conversationService;
     }
 
     @GetMapping
@@ -57,20 +61,13 @@ public class DocumentController {
     }
 
     @PostMapping(value = "/{id}/questions", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public RagAnswerDto askQuestion(@PathVariable UUID id, @RequestBody QuestionRequest request) {
-        if (request == null || request.question() == null) {
-            throw new InvalidQuestionException("A pergunta é obrigatória.");
-        }
+    public ConversationAnswerDto askQuestion(@PathVariable UUID id, @RequestBody QuestionRequest request) {
+        return conversationService.start(id, QuestionValidation.validate(request));
+    }
 
-        String question = request.question().strip();
-        if (question.isEmpty()) {
-            throw new InvalidQuestionException("A pergunta não pode estar vazia.");
-        }
-        if (question.codePointCount(0, question.length()) > 2000) {
-            throw new InvalidQuestionException("A pergunta deve ter no máximo 2.000 caracteres.");
-        }
-
-        return documentService.searchSimilarChunks(id, question);
+    @GetMapping("/{id}/conversations")
+    public List<ConversationResponse> conversations(@PathVariable UUID id) {
+        return conversationService.list(id);
     }
 
     public record UploadResponse(UUID id, DocumentStatus status) {

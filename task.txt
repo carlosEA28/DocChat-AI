@@ -165,6 +165,7 @@ Concluída quando: conversas e mensagens podem ser persistidas e recuperadas.
 
 
 TASK-23 — Implementar histórico de conversas
+
 Associar perguntas e respostas às conversas existentes.
 Criar endpoints para consultar o histórico e recuperar mensagens em ordem cronológica.
 Definir o comportamento quando uma conversa pertence a um documento excluído.
@@ -186,7 +187,9 @@ Concluída quando: o usuário consegue localizar e verificar os trechos utilizad
 
 
 Fase 6 — Segurança, testes e robustez
+
 Objetivo: garantir que a aplicação trate corretamente erros, arquivos problemáticos e isolamento de documentos.
+
 TASK-26 — Implementar exclusão de documentos
 Criar o fluxo completo de exclusão, removendo metadados, arquivo armazenado, embeddings e dados associados, conforme a política definida para conversas.
 Considerar o que acontece quando uma das etapas falha, já que banco relacional, armazenamento de arquivos e índice vetorial não compartilham necessariamente uma única transação.

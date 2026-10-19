@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.chat.client.advisor.api.Advisor;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.data.domain.Sort;
@@ -48,8 +50,9 @@ class DocumentServiceTest {
 
     private DocumentService createService() {
         when(chatBuilder.build()).thenReturn(chatClient);
-        when(chatClient.prompt(any(String.class))).thenReturn(requestSpec);
+        when(chatClient.prompt(any(Prompt.class))).thenReturn(requestSpec);
         when(requestSpec.user(any(Consumer.class))).thenReturn(requestSpec);
+        when(requestSpec.advisors(any(Advisor[].class))).thenReturn(requestSpec);
         when(requestSpec.call()).thenReturn(responseSpec);
         when(responseSpec.content()).thenReturn("Resposta");
         return new DocumentService(repository, s3Config, vectorStore, chatBuilder);
