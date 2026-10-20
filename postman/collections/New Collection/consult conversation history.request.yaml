@@ -1,5 +1,5 @@
 $kind: http-request
-url: http://localhost:8080/conversations/2e66513e-3cdb-4723-8815-1266dc8eb65b/messages
+url: http://localhost:8080/conversations/360a53b9-12be-42af-b769-f2200793c07d/messages
 method: GET
 body:
   type: json

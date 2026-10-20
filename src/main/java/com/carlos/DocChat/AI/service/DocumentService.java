@@ -37,20 +37,27 @@ public class DocumentService {
     private final S3Config s3Config;
     private final VectorStore vectorStore;
     private final ChatClient chatClient;
+    private static final String NO_EVIDENCE_ANSWER = "Não encontrei essa informação no documento.";
     private static final String REWRITE_INSTRUCTIONS = """
-            Rewrite the latest user question as a standalone search query for the same document.
-            Resolve references using the conversation history below. Preserve the user's intent.
-            Do not answer the question, invent facts, or include explanations. Return only the search query.
+            Rewrite the latest user question as a standalone question about the same document.
+            Resolve references using the conversation history below. For an ambiguous follow-up,
+            keep the topic of the most recent user question unless the user explicitly changes it.
+            For example, after a question about infrastructure automation, "What are the main points?"
+            means the main points of that automation, not a summary of the entire document.
+            Preserve the user's intent. Do not answer, invent facts, or explain the rewrite.
+            Return only the standalone question, in the same language as the user.
 
             Conversation history:
             %s
             """;
     private static final String ANSWER_INSTRUCTIONS = """
-            Answer the latest user question using only the retrieved PDF excerpts below.
+            Answer the standalone user question using only the retrieved PDF excerpts below.
             Conversation history may clarify what the user is referring to, but it is not
-            evidence about the PDF. If the excerpts do not support an answer, say
-            "Sorry, this information is not available in my context."
-            Be concise and factual.
+            evidence about the PDF. Do not infer a person's current education or employment
+            status from a date range; report the dates as written in the excerpts.
+            If the excerpts do not support an answer, say exactly
+            "Não encontrei essa informação no documento."
+            Be concise, factual, and answer in the user's language.
 
             Conversation history (reference context only):
             %s
@@ -204,8 +211,8 @@ public class DocumentService {
 
     public RagAnswerDto answerWithHistory(UUID documentId, String question, String history) {
         DocumentEntity document = findReadyDocument(documentId);
-        String searchQuery = history.isEmpty() ? question : rewriteSearchQuery(question, history);
-        return answer(document, question, searchQuery, history);
+        String standaloneQuestion = history.isEmpty() ? question : rewriteQuestion(question, history);
+        return answer(document, question, standaloneQuestion, history);
     }
 
     private DocumentEntity findReadyDocument(UUID documentId) {
@@ -219,7 +226,7 @@ public class DocumentService {
         return document;
     }
 
-    private String rewriteSearchQuery(String question, String history) {
+    private String rewriteQuestion(String question, String history) {
         try {
             String rewritten = chatClient.prompt(new Prompt(
                     new SystemMessage(REWRITE_INSTRUCTIONS.formatted(history)),
@@ -233,17 +240,21 @@ public class DocumentService {
         }
     }
 
-    private RagAnswerDto answer(DocumentEntity document, String question, String searchQuery,
+    private RagAnswerDto answer(DocumentEntity document, String originalQuestion, String standaloneQuestion,
                                 String history) {
         UUID documentId = document.getId();
         List<Document> results = vectorStore.similaritySearch(
                 org.springframework.ai.vectorstore.SearchRequest.builder()
-                        .query(searchQuery)
+                        .query(standaloneQuestion)
                         .topK(5)
                         .similarityThreshold(0.4)
                         .filterExpression("documentId == '" + documentId + "'")
                         .build()
         );
+
+        if (results.isEmpty()) {
+            return new RagAnswerDto(originalQuestion, NO_EVIDENCE_ANSWER, List.of());
+        }
 
         String context = results.stream()
                 .map(d -> "[Document: " +
@@ -254,7 +265,7 @@ public class DocumentService {
 
         String answer = chatClient.prompt(new Prompt(
                         new SystemMessage(ANSWER_INSTRUCTIONS.formatted(history, context)),
-                        new UserMessage(question)))
+                        new UserMessage(standaloneQuestion)))
                 .advisors(new TimmingAdviser(0))
                 .call()
                 .content();
@@ -263,7 +274,7 @@ public class DocumentService {
                 .map(chunk -> CitationDTO.from(chunk, document.getFilename(), documentId))
                 .toList();
 
-        return new RagAnswerDto(question, answer, citations);
+        return new RagAnswerDto(originalQuestion, answer, citations);
 
     }
 

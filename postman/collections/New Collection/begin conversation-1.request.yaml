@@ -1,0 +1,11 @@
+$kind: http-request
+name: begin conversation
+url: http://localhost:8080/documents/93552a02-de90-435b-aa76-71558ab0d3b2/questions
+method: POST
+body:
+  type: json
+  content: |-
+    {
+        "question": "Resuma a conclusão do artigo sobre a luva NeuroGuia."
+    }
+order: 3613242582827916

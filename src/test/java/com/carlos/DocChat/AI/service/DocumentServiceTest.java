@@ -35,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -148,24 +149,26 @@ class DocumentServiceTest {
     }
 
     @Test
-    void followUpRewritesSearchButAnswersOriginalQuestionWithDistinctHistoryAndEvidence() {
+    void ambiguousFollowUpKeepsItsTopicForSearchAndAnswer() {
         DocumentEntity ready = document(DocumentStatus.READY);
         when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
-        Document chunk = Document.builder().text("O segundo ponto trata de escalabilidade.")
+        Document chunk = Document.builder().text("Terraform e GitHub Actions automatizam infraestrutura.")
                 .metadata("documentId", ready.getId().toString()).score(0.8).build();
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(chunk));
-        when(responseSpec.content()).thenReturn("Explique a escalabilidade do segundo ponto",
-                "O segundo ponto explica escalabilidade.");
-        String history = "USER: Quais são os pontos?\nASSISTANT: Primeiro: segurança. Segundo: escalabilidade.";
+        String standaloneQuestion = "Quais são os principais pontos da automação da infraestrutura na nuvem pelo candidato?";
+        when(responseSpec.content()).thenReturn(standaloneQuestion,
+                "Terraform e GitHub Actions são os pontos principais.");
+        String history = "USER: Como o candidato automatizou a infraestrutura na nuvem?\n"
+                + "ASSISTANT: Utilizou Terraform e GitHub Actions.";
 
-        var result = service.answerWithHistory(ready.getId(), "Explique melhor o segundo ponto", history);
+        var result = service.answerWithHistory(ready.getId(), "Quais são os pontos principais?", history);
 
-        assertEquals("Explique melhor o segundo ponto", result.question());
-        assertEquals("O segundo ponto explica escalabilidade.", result.answer());
+        assertEquals("Quais são os pontos principais?", result.question());
+        assertEquals("Terraform e GitHub Actions são os pontos principais.", result.answer());
         assertEquals(ready.getId().toString(), result.citations().getFirst().source());
         ArgumentCaptor<SearchRequest> searchCaptor = ArgumentCaptor.forClass(SearchRequest.class);
         verify(vectorStore).similaritySearch(searchCaptor.capture());
-        assertEquals("Explique a escalabilidade do segundo ponto", searchCaptor.getValue().getQuery());
+        assertEquals(standaloneQuestion, searchCaptor.getValue().getQuery());
         assertTrue(searchCaptor.getValue().getFilterExpression().toString().contains(ready.getId().toString()));
 
         ArgumentCaptor<Prompt> prompts = ArgumentCaptor.forClass(Prompt.class);
@@ -173,19 +176,21 @@ class DocumentServiceTest {
         List<org.springframework.ai.chat.messages.Message> rewrite = prompts.getAllValues().get(0).getInstructions();
         List<org.springframework.ai.chat.messages.Message> answer = prompts.getAllValues().get(1).getInstructions();
         assertTrue(rewrite.getFirst().getText().contains(history));
-        assertEquals("Explique melhor o segundo ponto", rewrite.getLast().getText());
-        assertTrue(answer.getFirst().getText().contains("O segundo ponto trata de escalabilidade."));
+        assertEquals("Quais são os pontos principais?", rewrite.getLast().getText());
+        assertTrue(answer.getFirst().getText().contains("Terraform e GitHub Actions automatizam infraestrutura."));
         assertTrue(answer.getFirst().getText().contains("evidence about the PDF"));
+        assertTrue(answer.getFirst().getText().contains("Do not infer a person's current education or employment"));
         assertTrue(answer.getFirst().getText().contains("Conversation history (reference context only):\n" + history));
         assertTrue(answer.getFirst().getText().contains("Retrieved PDF excerpts:\n---"));
-        assertEquals("Explique melhor o segundo ponto", answer.getLast().getText());
+        assertEquals(standaloneQuestion, answer.getLast().getText());
     }
 
     @Test
     void fallsBackToOriginalQuestionWhenReformulationFails() {
         DocumentEntity ready = document(DocumentStatus.READY);
         when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
-        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(
+                Document.builder().text("Trecho relevante").score(0.8).build()));
         when(responseSpec.content()).thenThrow(new IllegalStateException("rewrite unavailable"))
                 .thenReturn("Resposta");
 
@@ -202,7 +207,8 @@ class DocumentServiceTest {
     void blankReformulationAlsoUsesOriginalQuestion() {
         DocumentEntity ready = document(DocumentStatus.READY);
         when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
-        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(
+                Document.builder().text("Trecho relevante").score(0.8).build()));
         when(responseSpec.content()).thenReturn("  ", "Resposta");
 
         service.answerWithHistory(ready.getId(), "Explique o segundo ponto",
@@ -278,12 +284,17 @@ class DocumentServiceTest {
     }
 
     @Test
-    void returnsEmptyListWhenNoChunksMatch() {
+    void unrelatedQuestionWithoutMatchingChunksReturnsNoEvidenceWithoutCallingModel() {
         DocumentEntity ready = document(DocumentStatus.READY);
         when(repository.findById(ready.getId())).thenReturn(Optional.of(ready));
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
 
-        assertTrue(service.searchSimilarChunks(ready.getId(), "Pergunta").citations().isEmpty());
+        var answer = service.searchSimilarChunks(ready.getId(), "Qual é a capital do Japão?");
+
+        assertEquals("Qual é a capital do Japão?", answer.question());
+        assertEquals("Não encontrei essa informação no documento.", answer.answer());
+        assertTrue(answer.citations().isEmpty());
+        verify(chatClient, never()).prompt(any(Prompt.class));
     }
 
     @Test
